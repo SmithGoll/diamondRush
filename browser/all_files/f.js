@@ -194,11 +194,11 @@ class f {
             this.#bInt = (array[n++] & 0xFF);
             marker.next(c.len, 1)
             var n14 = array[n++] & 0xFF;
-            this.#aInt2D = new Array(16); // WARNING: 2D array - Palete
+            this.#aInt2D = new Array(16); // WARNING: 2D array - Palette
             for (var j = 0; j < this.#bInt; ++j) {
                 this.#aInt2D[j] = new Array(n14);
                 switch (n13) {
-                    case -30584: {
+                    case 0x8888: {
                         for (var k = 0; k < n14; ++k) {
                             var n15;
                             marker.next(c.paletteData, 4)
@@ -209,7 +209,7 @@ class f {
                         }
                         break;
                     }
-                    case 17476: {
+                    case 0x4444: {
                         for (var l = 0; l < n14; ++l) {
                             var n16;
                             marker.next(c.paletteData, 2)
@@ -220,7 +220,7 @@ class f {
                         }
                         break;
                     }
-                    case 21781: {
+                    case 0x5515: {
                         for (var n17 = 0; n17 < n14; ++n17) {
                             marker.next(c.paletteData, 2)
                             var n18 = (array[n++] & 0xFF) + ((array[n++] & 0xFF) << 8); // ARRRRRGGGGGBBBBB
@@ -233,7 +233,7 @@ class f {
                         }
                         break;
                     }
-                    case 25861: {
+                    case 0x6505: {
                         for (var n20 = 0; n20 < n14; ++n20) {
                             marker.next(c.paletteData, 2)
                             var n21 = (array[n++] & 0xFF) + ((array[n++] & 0xFF) << 8);

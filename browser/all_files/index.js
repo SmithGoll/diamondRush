@@ -21,6 +21,7 @@ var files_list = {
     "cr.f": FILE_CHUNKS,
     "demo.f": FILE_DEMOSPR,//FILE_UNDEFINED,
     "demoSpr.bin": FILE_DEMOSPR,//FILE_RAW,
+    "demoSpr.f": FILE_CHUNKS,
     "demoui.f": FILE_CHUNKS,
     "gen0.f": FILE_CHUNKS,
     "gen1.f": FILE_CHUNKS,
