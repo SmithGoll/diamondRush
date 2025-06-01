@@ -6,14 +6,14 @@
 
 import {FileType, FileInfo, files} from "./files.js";
 import {FileChunk, parseFile} from "./parsing.js";
-import {createElement, hexColorStringToColorArray} from "./utils.js";
+import {colorArrayToHexColorString, createElement, hexColorStringToColorArray} from "./utils.js";
 
 /** @type {FileInfo|null} */
 let currentFile = null
 
 {
     /** @type {string|null} */
-    const fileName = localStorage.getItem("diamondRushBrowserAllFilesNew-fileName")
+    const fileName = readCurrentFileName() // localStorage.getItem("diamondRushBrowserAllFilesNew-fileName")
     if (fileName !== null)
         currentFile = files.find(file => file.fileName === fileName) || null;
 }
@@ -35,9 +35,84 @@ function addFileInputElement(file) {
     document.getElementById("file_list").appendChild(label);
 }
 
+/**
+ * @param config {TParseConfig}
+ */
+function saveCurrentConfig(config) {
+    localStorage.setItem("diamondRushBrowserAllFilesNew-config", JSON.stringify(config))
+}
+
+/**
+ * @return {Partial<TParseConfig>}
+ */
+function loadSavedConfig() {
+    const config = JSON.parse(localStorage.getItem("diamondRushBrowserAllFilesNew-config")) ?? {}
+    if (typeof config !== "object") return {}
+    return config
+}
+
+/**
+ * @return {never}
+ */
+function resetSavedConfig() {
+    localStorage.removeItem("diamondRushBrowserAllFilesNew-config")
+    document.location.reload()
+    throw new Error("Nothing should run after this")
+}
+
+/**
+ * @param form {HTMLFormElement}
+ * @param config {Partial<TParseConfig>}
+ */
+function applyConfigToForm(form, config) {
+    // @formatter:off
+    if (config.hasOwnProperty("render_scale"))                        form["render_scale"].value = config.render_scale.toString(10)
+    if (config.hasOwnProperty("sprites_background"))                  form["sprites_background"].value = colorArrayToHexColorString(config.sprites_background)
+    if (config.hasOwnProperty("sprites_animation_origin"))            form["sprites_animation_origin"].value = config.sprites_animation_origin
+    if (config.hasOwnProperty("sprites_animation_origin_background")) form["sprites_animation_origin_background"].value = colorArrayToHexColorString(config.sprites_animation_origin_background)
+    if (config.hasOwnProperty("stages_render_background"))            form["stages_render_background"].checked = config.stages_render_background
+    if (config.hasOwnProperty("stages_render_player"))                form["stages_render_player"].checked = config.stages_render_player
+    if (config.hasOwnProperty("stages_render_foreground"))            form["stages_render_foreground"].checked = config.stages_render_foreground
+    if (config.hasOwnProperty("stages_render_special"))               form["stages_render_special"].checked = config.stages_render_special
+    if (config.hasOwnProperty("stages_render_chest_contents"))        form["stages_render_chest_contents"].checked = config.stages_render_chest_contents
+    if (config.hasOwnProperty("stages_render_unknown"))               form["stages_render_unknown"].checked = config.stages_render_unknown
+    if (config.hasOwnProperty("stages_render_pot_fan_air"))           form["stages_render_pot_fan_air"].checked = config.stages_render_pot_fan_air
+    if (config.hasOwnProperty("enable_delayed_rendering"))            form["enable_delayed_rendering"].checked = config.enable_delayed_rendering
+    // @formatter:on
+}
+
+/**
+ * @param fileName {string}
+ * @param e {PopStateEvent|Event|null}
+ */
+function writeCurrentFileName(fileName, e = null) {
+    if (e?.type === "popstate") return // We don't push the state when going back in history
+
+    const url = new URL(document.location)
+    url.searchParams.set("fileName", fileName)
+
+    // Add the new URL to the history without reloading the page
+    history.pushState({fileName}, '', url)
+}
+
+/**
+ * @return {string|null}
+ */
+function readCurrentFileName() {
+    const params = new URL(document.location).searchParams
+    return params.has("fileName") ? params.get("fileName") : null
+}
+
 async function onload() {
     for (const file of files)
         addFileInputElement(file)
+
+    const form = document.getElementById("file_config_form")
+    applyConfigToForm(form, loadSavedConfig())
+    document.getElementById("file_config_form_reset_button").addEventListener("click", () => {
+        if (confirm("Are you sure you want to reset the configuration?"))
+            resetSavedConfig()
+    })
 
     // Lazily load the files
     setTimeout(async () => {
@@ -108,10 +183,10 @@ async function onFileConfigFormSubmit(event) {
     await loadAndOpenCurrentFile()
 }
 
-async function loadAndOpenCurrentFile() {
+async function loadAndOpenCurrentFile(e = null) {
     if (currentFile === null) return
 
-    localStorage.setItem("diamondRushBrowserAllFilesNew-fileName", currentFile.fileName)
+    writeCurrentFileName(currentFile.fileName, e) // localStorage.setItem("diamondRushBrowserAllFilesNew-fileName", currentFile.fileName)
     const form = document.getElementById("file_config_form")
     form["is_chunks"].checked = currentFile.isChunks
     form["file_type"].value = Object.entries(FileType).find(([name, type]) => type === currentFile.fileType)[0]
@@ -128,12 +203,14 @@ async function loadAndOpenCurrentFile() {
         stages_render_chest_contents: form["stages_render_chest_contents"].checked,
         stages_render_unknown: form["stages_render_unknown"].checked,
         stages_render_pot_fan_air: form["stages_render_pot_fan_air"].checked,
+        enable_delayed_rendering: form["enable_delayed_rendering"].checked,
         async parseOtherFile(fileName) {
             const file = files.find(file => file.fileName === fileName) || null;
             if (file === null || file.id === currentFile.id) return null
             return (await parseFileAndItsChunks(file)).chunks
         },
     }
+    saveCurrentConfig(config)
     const chunksDiv = document.getElementById("chunks")
     const expectLongRender = ["w0.bin", "w1.bin", "w2.bin", "o.f"].includes(currentFile.fileName)
 
@@ -192,3 +269,18 @@ document.addEventListener("DOMContentLoaded", onload);
 document.getElementById("file_form").addEventListener("submit", onFileFormSubmit);
 document.getElementById("custom_file_form").addEventListener("submit", onCustomFileFormSubmit);
 document.getElementById("file_config_form").addEventListener("submit", onFileConfigFormSubmit);
+// Make sure that when going back in history, the fileName parameter is taken into account
+window.addEventListener('popstate', (e) => {
+    // console.log("popstate", e.state)
+
+    /** @type {string|null} */
+    const fileName = e.state.fileName || null // readCurrentFileName()
+    if (fileName === null) return
+
+    const file = files.find(file => file.fileName === fileName) || null;
+    if (file === null) return
+
+    currentFile = file
+    document.getElementById("file_form")["file_id"].value = currentFile.id.toString()
+    loadAndOpenCurrentFile(e).then(void 0)
+})

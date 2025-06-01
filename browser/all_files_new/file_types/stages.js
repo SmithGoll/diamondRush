@@ -4,7 +4,7 @@
  * @home https://jakub-augustyn.web.app/
  */
 
-import {copyToClipboardButton, createElement, downloadCanvasButton, toggleButton} from "../utils.js";
+import {copyToClipboardButton, createElement, delayedRender, downloadCanvasButton, toggleButton} from "../utils.js";
 
 const fileNameToMapID = new Map([
     ["w0.bin", "angkor"],
@@ -1027,37 +1027,41 @@ export async function render(chunk, parsed, config) {
     for (let i = 0; i < stages.length; i++) {
         const stage = stages[i]
 
-        const numbersCanvas = stage.renderNumbers(config.render_scale)
-        const numbersDiv = createElement("div", [
-            numbersCanvas,
-            createElement("br"),
-            downloadCanvasButton(numbersCanvas, `${mapID}-stage-${i}-numbers.png`)
-        ])
+        const delayed = await delayedRender(async () => {
+            const numbersCanvas = stage.renderNumbers(config.render_scale)
+            const numbersDiv = createElement("div", [
+                numbersCanvas,
+                createElement("br"),
+                downloadCanvasButton(numbersCanvas, `${mapID}-stage-${i}-numbers.png`)
+            ])
 
-        const fullRenderCanvas = blocksFileChunks ?
-            await stage.render(config.render_scale, blocksFileChunks, {
-                cm,
-                gen0,
-                gen1,
-                gen2,
-                gen3,
-                gen4,
-                mmv,
-                b0
-            }, worldIndex, config) :
-            null
-        const fullRenderDiv = fullRenderCanvas && createElement("div", [
-            fullRenderCanvas,
-            createElement("br"),
-            downloadCanvasButton(fullRenderCanvas, `${mapID}-stage-${i}-full-render.png`)
-        ])
+            const fullRenderCanvas = blocksFileChunks ?
+                await stage.render(config.render_scale, blocksFileChunks, {
+                    cm,
+                    gen0,
+                    gen1,
+                    gen2,
+                    gen3,
+                    gen4,
+                    mmv,
+                    b0
+                }, worldIndex, config) :
+                null
+            const fullRenderDiv = fullRenderCanvas && createElement("div", [
+                fullRenderCanvas,
+                createElement("br"),
+                downloadCanvasButton(fullRenderCanvas, `${mapID}-stage-${i}-full-render.png`)
+            ])
+
+            return createElement("div", [toggleButton(numbersDiv, false, "Show numbers", "Hide numbers"),
+                createElement("br"),
+                numbersDiv,
+                fullRenderDiv])
+        }, config)
 
         stageDivs.push(createElement("div", [
             createElement("h2", `Stage ${i + 1}`),
-            toggleButton(numbersDiv, false, "Show numbers", "Hide numbers"),
-            createElement("br"),
-            numbersDiv,
-            fullRenderDiv
+            delayed
         ], {"class": "stage"}))
     }
 

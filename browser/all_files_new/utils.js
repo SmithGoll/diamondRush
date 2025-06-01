@@ -6,7 +6,7 @@
 
 /**
  * @param tagName {string}
- * @param content {(HTMLElement|null)[]|string|null}
+ * @param content {(HTMLElement|Text|null)[]|string|null}
  * @param attributes {Object<string, string>|null}
  * @return {HTMLElement}
  */
@@ -165,6 +165,26 @@ export function hexColorStringToColorArray(hexString) {
 }
 
 /**
+ * @param colorArray {number[]}
+ * @return {string}
+ */
+export function colorArrayToHexColorString(colorArray) {
+    if (!(colorArray instanceof Array) || !colorArray.every(x => typeof x === "number")) throw new Error("colorArray must be an array of numbers")
+    if (colorArray.length < 3) throw new Error("colorArray must have at least 3 elements")
+
+    return "#".concat(
+        colorArray
+            .slice(0, 3)
+            .map(x =>
+                (x & 0xFF)
+                    .toString(16)
+                    .padStart(2, "0")
+            )
+            .join("")
+    )
+}
+
+/**
  * @param target {HTMLElement}
  * @param initialState {boolean}
  * @param showText {string|null}
@@ -189,4 +209,43 @@ export function toggleButton(target, initialState = true, showText = null, hideT
 
     update()
     return button
+}
+
+/**
+ * @param render {function(): Promise<HTMLElement>}
+ * @param content {(HTMLElement|Text|null)[]|string|null} The content to show in the button.
+ * @return {HTMLButtonElement}
+ */
+export function delayedRenderingButton(render, content = null) {
+    const button = createElement("button", content ?? "Render")
+    button.addEventListener("click", async () => {
+        button.innerText = "Rendering..."
+        button.disabled = true
+
+        try {
+            const rendered = await render()
+
+            // Replace the button with the content
+            button.parentNode.replaceChild(rendered, button)
+            button.remove()
+        } catch (e) {
+            console.error("Error while delayed rendering:", e)
+            button.disabled = false
+            button.innerText = "Rendering failed!"
+        }
+    })
+    return button
+}
+
+/**
+ * @param render {function(): Promise<HTMLElement>}
+ * @param config {TParseConfig}
+ * @param content {(HTMLElement|Text|null)[]|string|null} The content to show in the button.
+ * @return {Promise<HTMLButtonElement|HTMLElement>}
+ */
+export async function delayedRender(render, config, content = null) {
+    if (config.enable_delayed_rendering)
+        return delayedRenderingButton(render, content)
+    else
+        return await render()
 }

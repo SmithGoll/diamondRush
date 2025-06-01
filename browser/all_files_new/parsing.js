@@ -8,6 +8,7 @@ import {parse as parseTexts, render as renderTexts} from "./file_types/texts.js"
 import {parse as parsePNG, render as renderPNG} from "./file_types/PNG.js";
 import {parse as parseMap, render as renderMap} from "./file_types/map.js";
 import {parse as parseSprites, render as renderSprites} from "./file_types/sprites.js";
+import {parse as parseDemo, render as renderDemo} from "./file_types/demoF.js";
 import {parse as parseDemoSprites, render as renderDemoSprites} from "./file_types/demoSprBin.js";
 import {parse as parseStages, render as renderStages} from "./file_types/stages.js";
 import {parse as parseRaw, render as renderRaw} from "./file_types/raw.js";
@@ -29,7 +30,9 @@ import {createElement, downloadRawButton} from "./utils.js";
  *      stages_render_chest_contents: boolean,
  *      stages_render_unknown: boolean,
  *      stages_render_pot_fan_air: boolean,
- *      parseOtherFile: function(fileName: string): Promise<FileChunk[]|null>
+ *      enable_delayed_rendering: boolean,
+ *
+ *      parseOtherFile: function(fileName: string): Promise<FileChunk[]|null>,
  * }} TParseConfig
  */
 
@@ -116,6 +119,9 @@ export class FileChunk {
             case FileType.SPRITES:
                 parsedData.data = await parseSprites(this);
                 break
+            case FileType.DEMO:
+                parsedData.data = await parseDemo(this);
+                break
             case FileType.DEMO_SPRITES:
                 parsedData.data = await parseDemoSprites(this);
                 break
@@ -173,6 +179,9 @@ export class FileChunk {
                 break
             case FileType.SPRITES:
                 parsedData.container = await renderSprites(this, parsedData.data, config);
+                break
+            case FileType.DEMO:
+                parsedData.container = await renderDemo(this, parsedData.data, config);
                 break
             case FileType.DEMO_SPRITES:
                 parsedData.container = await renderDemoSprites(this, parsedData.data, config);

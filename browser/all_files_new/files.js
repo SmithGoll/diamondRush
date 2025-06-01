@@ -17,7 +17,8 @@ export const FileType = Object.freeze({
     STAGES: Symbol("STAGES"),
     TEXTS: Symbol("TEXTS"),
     MIDI: Symbol("MIDI"),
-    DEMO_SPRITES: Symbol("DEMO_SPRITES"),
+    DEMO: Symbol("DEMO"), // For: demo.f
+    DEMO_SPRITES: Symbol("DEMO_SPRITES"), // For: demoSpr.bin
     PNG: Symbol("PNG"),
 })
 
@@ -123,7 +124,7 @@ export const files = [
     new FileInfo("b1.f", FileType.SPRITES, true),
     new FileInfo("cm.f", FileType.SPRITES, true),
     new FileInfo("cr.f", FileType.RAW, true),
-    new FileInfo("demo.f", FileType.RAW, true),
+    new FileInfo("demo.f", FileType.DEMO, true),
     new FileInfo("demoSpr.bin", FileType.DEMO_SPRITES, false),
     new FileInfo("demoui.f", FileType.SPRITES, true),
     new FileInfo("gen0.f", FileType.SPRITES, true),

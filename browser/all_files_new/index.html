@@ -36,6 +36,7 @@
                 <label><input type="radio" name="file_type" value="MAP">Map (map of stages)</label>
                 <label><input type="radio" name="file_type" value="STAGES">Stages (stage data)</label>
                 <label><input type="radio" name="file_type" value="TEXTS">Texts (localization)</label>
+                <label><input type="radio" name="file_type" value="DEMO">demo.f demo animations</label>
                 <label><input type="radio" name="file_type" value="DEMO_SPRITES">demoSpr.bin sprites</label>
                 <label>
                     <input type="radio" name="file_type" value="MIDI">
@@ -45,6 +46,9 @@
             </fieldset>
             <label>Render scale: <input type="number" name="render_scale" min="1" max="15" step="1"
                                         value="2"></label><br>
+            <label title="When enabled, content will only be rendered after clicking a render button. This only affects stages for now.">
+                Enable delayed rendering: <input type="checkbox" name="enable_delayed_rendering" checked>
+            </label><br>
             <fieldset>
                 <legend>Sprites config</legend>
                 <label>Background color: <input type="color" name="sprites_background" value="#00FF00"></label><br>
@@ -74,6 +78,7 @@
                 <label>Render pot fan air: <input type="checkbox" name="stages_render_pot_fan_air" checked></label><br>
             </fieldset>
             <input type="submit" value="Load"/>
+            <input type="button" id="file_config_form_reset_button" value="Reset"/>
         </form>
     </div>
     <div>
