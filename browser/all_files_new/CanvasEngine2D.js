@@ -1927,7 +1927,7 @@ class CanvasEngine2D {
             if (element.element.checkRender(element, this.args.camera)) {
                 this.ctx.fillStyle = element.element.color || "black"
                 this.ctx.font = element.element.font || "10px sans-serif"
-                this.ctx.fillText(element.element.text, element.x, element.y)
+                this.ctx.fillText(element.element.text, element.x - this.args.camera.x, element.y - this.args.camera.y)
             }
         }
         this.renderResultCanvas()

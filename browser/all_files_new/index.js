@@ -207,7 +207,7 @@ async function loadAndOpenCurrentFile(e = null) {
         async parseOtherFile(fileName) {
             const file = files.find(file => file.fileName === fileName) || null;
             if (file === null || file.id === currentFile.id) return null
-            return (await parseFileAndItsChunks(file)).chunks
+            return (await parseFileAndItsChunks(file, config)).chunks
         },
     }
     saveCurrentConfig(config)
@@ -220,7 +220,7 @@ async function loadAndOpenCurrentFile(e = null) {
     chunksDiv.innerHTML = "Parsing..."
     await new Promise(resolve => setTimeout(resolve, expectLongRender ? 50 : 0)) // Let HTML render
 
-    const {chunks, errors} = await parseFileAndItsChunks(currentFile)
+    const {chunks, errors} = await parseFileAndItsChunks(currentFile, config)
 
     chunksDiv.innerHTML = "Rendering..."
     await new Promise(resolve => setTimeout(resolve, expectLongRender ? 50 : 0)) // Let HTML render
@@ -244,14 +244,27 @@ async function loadAndOpenCurrentFile(e = null) {
 }
 
 /**
+ * A memoization variable for parseFileAndItsChunks().
+ * @type {Map<FileInfo, {chunks: FileChunk[], errors: any[], configStr: string}>}
+ */
+const _parsedFiles = new Map()
+
+/**
  * @param file {FileInfo}
+ * @param config {TParseConfig}
  * @return {Promise<{chunks: FileChunk[], errors: Error[]}>}
  */
-async function parseFileAndItsChunks(file) {
+async function parseFileAndItsChunks(file, config) {
+    if (_parsedFiles.has(file)) {
+        if (_parsedFiles.get(file).configStr === JSON.stringify(config))
+            return _parsedFiles.get(file) // Return the memoized parse result for the given config
+        else _parsedFiles.delete(file) // Forget the bad value
+    }
+
     console.group("Load file ".concat(file.fileName))
     console.log("File:", file)
     const chunks = await parseFile(file)
-    const results = await Promise.allSettled(chunks.map(chunk => chunk.parse()))
+    const results = await Promise.allSettled(chunks.map(chunk => chunk.parse(config)))
     console.log("File chunks parsed:", results)
     const errors = new Array(chunks.length)
     for (let i = 0; i < results.length; i++) {
@@ -262,6 +275,7 @@ async function parseFileAndItsChunks(file) {
         }
     }
     console.groupEnd()
+    _parsedFiles.set(file, {chunks, errors, configStr: JSON.stringify(config)})
     return {chunks, errors}
 }
 

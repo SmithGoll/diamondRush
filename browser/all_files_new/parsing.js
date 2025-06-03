@@ -89,19 +89,21 @@ export class FileChunk {
     }
 
     /**
+     * @param config {TParseConfig|null}
      * @return {Promise<TParsedData>}
      */
-    async parse() {
+    async parse(config = null) {
         if (this.#parsePromise !== null)
             return this.#parsePromise
 
-        return this.#parsePromise = this.#parseInner()
+        return this.#parsePromise = this.#parseInner(config)
     }
 
     /**
+     * @param config {TParseConfig|null}
      * @return {Promise<TParsedData>}
      */
-    async #parseInner() {
+    async #parseInner(config = null) {
         if (this.#parsedData !== null) return this.#parsedData
 
         /** @type {TParsedData} */
@@ -120,7 +122,7 @@ export class FileChunk {
                 parsedData.data = await parseSprites(this);
                 break
             case FileType.DEMO:
-                parsedData.data = await parseDemo(this);
+                parsedData.data = await parseDemo(this, config);
                 break
             case FileType.DEMO_SPRITES:
                 parsedData.data = await parseDemoSprites(this);
@@ -157,13 +159,16 @@ export class FileChunk {
      * @return {Promise<HTMLElement>}
      */
     async #renderInner(config = null) {
-        if (!config) config = {
-            sprites_background: [0, 0xFF, 0, 0xFF],
-            sprites_animation_origin: "hide",
-            sprites_animation_origin_background: [0xFF, 0, 0, 0xFF]
+        if (!config) {
+            config = {
+                sprites_background: [0, 0xFF, 0, 0xFF],
+                sprites_animation_origin: "hide",
+                sprites_animation_origin_background: [0xFF, 0, 0, 0xFF],
+            }
+            console.warn("Config may be incomplete") // FIXME
         }
 
-        await this.parse()
+        await this.parse(config)
         /** @type {TParsedData} */
         const parsedData = this.#parsedData
         // FIXME Memory leak: we are not destroying the previous container (it can be referenced by an ongoing animation etc.)

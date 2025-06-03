@@ -17,7 +17,7 @@ const mapIDToBlocksFileName = new Map([
     ["siberia", "2.f"],
 ])
 
-class Stage {
+export class Stage {
     /**
      * @readonly
      * @type {number}
@@ -129,7 +129,7 @@ class Stage {
     }
 
     /**
-     * @param scale {number}
+     * @param engine {CanvasEngine2D}
      * @param blocksFileChunks {FileChunk[]|null}
      * @param cm {FileChunk[]|null}
      * @param gen0 {FileChunk[]|null}
@@ -143,16 +143,16 @@ class Stage {
      * @param config {TParseConfig|null}
      * @returns {HTMLCanvasElement}
      */
-    async render(scale, blocksFileChunks, {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}, worldIndex, config = null) {
-        const canvas = document.createElement("canvas")
-        const engine = new CanvasEngine2D({
-            canvas: canvas,
-            appName: "diamondRush-browser-all_files_new-utils-renderCanvasEngine2DImage",
-            imageW: this.width * 24,
-            imageH: this.height * 24,
-            backgroundColor: CanvasEngine2DVariables.COLORS.BLACK,
-            scale
-        })
+    async renderToEngine(engine, blocksFileChunks, {
+        cm,
+        gen0,
+        gen1,
+        gen2,
+        gen3,
+        gen4,
+        mmv,
+        b0
+    }, worldIndex, config = null) {
         config = config || {
             stages_render_background: true,
             stages_render_player: true,
@@ -245,7 +245,8 @@ class Stage {
 
         const mysticMalletTile = await getModule(gen1, 9, 0, 0),
             grippingHookTile = await getModule(gen1, 9, 1, 0),
-            freezeMalletTile = await getModule(gen1, 9, 2, 0)
+            freezeMalletTile = await getModule(gen1, 9, 2, 0),
+            mysticPotionTile = await getModule(gen2, 7, 0, 0)
 
         const exitLeftTile = await getModule(cm, 0, 1, 0),
             exitRightTile = await getModule(cm, 0, 0, 0)
@@ -672,6 +673,11 @@ class Stage {
                                 engine.createImage("foreground+1", fireCrystalTile),
                                 blockX - 2, blockY - 8, 3
                             )
+                        else if (contents === 40)
+                            engine.addElement(
+                                engine.createImage("foreground+1", mysticPotionTile),
+                                blockX, blockY - 8, 3
+                            )
                         else if (contents === 42)
                             engine.addElement(
                                 engine.createImage("foreground+1", compassTile),
@@ -682,7 +688,7 @@ class Stage {
                                 engine.createText("foreground+1", "???", "#F00", "13px monospace"),
                                 blockX + 1, blockY + 20, 3
                             )
-                            console.log("Unknown chest contents:", contents, isRed ? "red" : "normal", block)
+                            console.log("Unknown chest contents:", contents, isRed ? "red" : "normal", block, x, y)
                         }
                     }
                 }
@@ -954,6 +960,44 @@ class Stage {
                     engine.addElement(engine.createImage("foreground", foregroundData), blockX + dX3, blockY + dY3, 2)
             }
         }
+    }
+
+    /**
+     * @param scale {number}
+     * @param blocksFileChunks {FileChunk[]|null}
+     * @param cm {FileChunk[]|null}
+     * @param gen0 {FileChunk[]|null}
+     * @param gen1 {FileChunk[]|null}
+     * @param gen2 {FileChunk[]|null}
+     * @param gen3 {FileChunk[]|null}
+     * @param gen4 {FileChunk[]|null}
+     * @param mmv {FileChunk[]|null}
+     * @param b0 {FileChunk[]|null}
+     * @param worldIndex {0|1|2}
+     * @param config {TParseConfig|null}
+     * @returns {HTMLCanvasElement}
+     */
+    async render(scale, blocksFileChunks, {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}, worldIndex, config = null) {
+        const canvas = document.createElement("canvas")
+        const engine = new CanvasEngine2D({
+            canvas: canvas,
+            appName: "diamondRush-browser-all_files_new-utils-renderCanvasEngine2DImage",
+            imageW: this.width * 24,
+            imageH: this.height * 24,
+            backgroundColor: CanvasEngine2DVariables.COLORS.BLACK,
+            scale
+        })
+
+        await this.renderToEngine(engine, blocksFileChunks, {
+            cm,
+            gen0,
+            gen1,
+            gen2,
+            gen3,
+            gen4,
+            mmv,
+            b0
+        }, worldIndex, config)
 
         engine.render()
         return canvas
@@ -998,6 +1042,28 @@ export async function parse(chunk) {
 }
 
 /**
+ * @param config {TParseConfig}
+ * @param worldIndex {0|1|2}
+ * @return {Promise<{blocksFileChunks: (FileChunk[]|null), otherFiles: {cm: (FileChunk[]|null), gen0: (FileChunk[]|null), gen1: (FileChunk[]|null), gen2: (FileChunk[]|null), gen3: (FileChunk[]|null), gen4: (FileChunk[]|null), mmv: (FileChunk[]|null), b0: (FileChunk[]|null)}}>}
+ */
+export async function parseRequiredFilesToRender(config, worldIndex) {
+    const mapID = worldIndex === 0 ? "angkor" : (worldIndex === 1 ? "bavaria" : "siberia")
+    /** @type {FileChunk[]|null} */
+    const blocksFileChunks = await config.parseOtherFile(mapIDToBlocksFileName.get(mapID))
+    /** @type {FileChunk[]|null} */
+    const cm = await config.parseOtherFile("cm.f"),
+        gen0 = await config.parseOtherFile("gen0.f"),
+        gen1 = await config.parseOtherFile("gen1.f"),
+        gen2 = await config.parseOtherFile("gen2.f"),
+        gen3 = await config.parseOtherFile("gen3.f"),
+        gen4 = (mapID === "siberia" ? await config.parseOtherFile("gen4.f") : null),
+        mmv = await config.parseOtherFile("mmv.f"),
+        b0 = (mapID === "angkor" ? await config.parseOtherFile("b0.f") : null)
+
+    return {blocksFileChunks, otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}}
+}
+
+/**
  * @param chunk {FileChunk}
  * @param parsed {TParsedDataData}
  * @param config {TParseConfig}
@@ -1010,18 +1076,10 @@ export async function render(chunk, parsed, config) {
     const mapID = parsed.mapID
     /** @type {0|1|2} */
     const worldIndex = mapID === "angkor" ? 0 : (mapID === "bavaria" ? 1 : 2)
-
-    /** @type {FileChunk[]|null} */
-    const blocksFileChunks = await config.parseOtherFile(mapIDToBlocksFileName.get(mapID))
-    /** @type {FileChunk[]|null} */
-    const cm = await config.parseOtherFile("cm.f"),
-        gen0 = await config.parseOtherFile("gen0.f"),
-        gen1 = await config.parseOtherFile("gen1.f"),
-        gen2 = await config.parseOtherFile("gen2.f"),
-        gen3 = await config.parseOtherFile("gen3.f"),
-        gen4 = (mapID === "siberia" ? await config.parseOtherFile("gen4.f") : null),
-        mmv = await config.parseOtherFile("mmv.f"),
-        b0 = (mapID === "angkor" ? await config.parseOtherFile("b0.f") : null)
+    const {
+        blocksFileChunks,
+        otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}
+    } = await parseRequiredFilesToRender(config, worldIndex)
 
     const stageDivs = []
     for (let i = 0; i < stages.length; i++) {
