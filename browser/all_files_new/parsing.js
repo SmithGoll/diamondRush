@@ -12,6 +12,7 @@ import {parse as parseDemo, render as renderDemo} from "./file_types/demoF.js";
 import {parse as parseDemoSprites, render as renderDemoSprites} from "./file_types/demoSprBin.js";
 import {parse as parseStages, render as renderStages} from "./file_types/stages.js";
 import {parse as parseRaw, render as renderRaw} from "./file_types/raw.js";
+import {parse as parseCharMap, render as renderCharMap} from "./file_types/charMap.js";
 import {FileType} from "./files.js";
 import {createElement, downloadRawButton} from "./utils.js";
 
@@ -23,13 +24,11 @@ import {createElement, downloadRawButton} from "./utils.js";
  *      sprites_background: uint8_t[],
  *      sprites_animation_origin: "hide"|"origin_pixel"|"origin_cross"|"block",
  *      sprites_animation_origin_background: uint8_t[],
- *      stages_render_background: boolean,
- *      stages_render_player: boolean,
- *      stages_render_foreground: boolean,
  *      stages_render_special: boolean,
  *      stages_render_chest_contents: boolean,
  *      stages_render_unknown: boolean,
- *      stages_render_pot_fan_air: boolean,
+ *      stages_render_decoration: boolean,
+ *      stages_render_invisible : boolean,
  *      enable_delayed_rendering: boolean,
  *
  *      parseOtherFile: function(fileName: string): Promise<FileChunk[]|null>,
@@ -133,6 +132,9 @@ export class FileChunk {
             case FileType.RAW:
                 parsedData.data = await parseRaw(this);
                 break
+            case FileType.CHAR_MAP:
+                parsedData.data = await parseCharMap(this);
+                break
             default:
                 console.warn("Unknown file type " + this.type.toString())
                 parsedData.data = null
@@ -196,6 +198,9 @@ export class FileChunk {
                 break
             case FileType.RAW:
                 parsedData.container = await renderRaw(this, parsedData.data, config);
+                break
+            case FileType.CHAR_MAP:
+                parsedData.container = await renderCharMap(this, parsedData.data, config);
                 break
             default:
                 console.warn("Unknown file type " + this.type.toString())

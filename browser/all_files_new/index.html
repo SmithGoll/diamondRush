@@ -43,6 +43,7 @@
                     <a href="https://en.wikipedia.org/wiki/MIDI#Computer_files" target="_blank">MIDI</a> (sound)
                 </label>
                 <label><input type="radio" name="file_type" value="PNG">PNG</label>
+                <label><input type="radio" name="file_type" value="CHAR_MAP">Character Map</label>
             </fieldset>
             <label>Render scale: <input type="number" name="render_scale" min="1" max="15" step="1"
                                         value="2"></label><br>
@@ -66,16 +67,12 @@
             </fieldset>
             <fieldset>
                 <legend>Stages config</legend>
-                <label>Render background layer: <input type="checkbox" name="stages_render_background"
-                                                       checked></label><br>
-                <label>Render player layer: <input type="checkbox" name="stages_render_player" checked></label><br>
-                <label>Render foreground layer: <input type="checkbox" name="stages_render_foreground"
-                                                       checked></label><br>
                 <label>Render special cases: <input type="checkbox" name="stages_render_special" checked></label><br>
                 <label>Render chest contents: <input type="checkbox" name="stages_render_chest_contents"
                                                      checked></label><br>
                 <label>Render unknown blocks: <input type="checkbox" name="stages_render_unknown" checked></label><br>
-                <label>Render pot fan air: <input type="checkbox" name="stages_render_pot_fan_air" checked></label><br>
+                <label>Render decoration: <input type="checkbox" name="stages_render_decoration" checked></label><br>
+                <label>Render invisible content: <input type="checkbox" name="stages_render_invisible" checked></label><br>
             </fieldset>
             <input type="submit" value="Load"/>
             <input type="button" id="file_config_form_reset_button" value="Reset"/>

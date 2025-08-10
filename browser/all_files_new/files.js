@@ -20,6 +20,7 @@ export const FileType = Object.freeze({
     DEMO: Symbol("DEMO"), // For: demo.f
     DEMO_SPRITES: Symbol("DEMO_SPRITES"), // For: demoSpr.bin
     PNG: Symbol("PNG"),
+    CHAR_MAP: Symbol("CHAR_MAP"),
 })
 
 export class FileInfo {
@@ -151,7 +152,7 @@ export const files = [
     new FileInfo("map_angkor.out", FileType.MAP, false),
     new FileInfo("map_scotland.out", FileType.MAP, false),
     new FileInfo("map_tibet.out", FileType.MAP, false),
-    new FileInfo("mc", FileType.RAW, false),
+    new FileInfo("mc", FileType.CHAR_MAP, false),
     new FileInfo("mm0.f", FileType.SPRITES, true),
     new FileInfo("mm1.f", FileType.SPRITES, true),
     new FileInfo("mmv.f", FileType.SPRITES, true),

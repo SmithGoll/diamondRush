@@ -249,3 +249,72 @@ export async function delayedRender(render, config, content = null) {
     else
         return await render()
 }
+
+export function createTable(headers, tableData, config = {}) {
+    const {
+        columnAlign = [],
+        tableStyle = {
+            borderCollapse: 'collapse',
+            margin: 'auto',
+            width: '800px',
+            fontFamily: 'monospace'
+        },
+        headerStyle = {
+            padding: '10px',
+            fontWeight: 'bold',
+            border: '1px solid #ddd',
+            background: '#f0f0f0',
+            textAlign: 'center'
+        },
+        contentStyle = {
+            padding: '10px',
+            fontFamily: 'monospace',
+            border: '1px solid #ddd',
+            textAlign: 'center'
+        }
+    } = config;
+
+    const table = document.createElement('table');
+    Object.entries(tableStyle).forEach(([key, value]) => {
+        table.style[key] = value;
+    });
+
+    const headerRow = document.createElement('tr');
+    headers.forEach((obj, j) => {
+        const th = document.createElement('th');
+
+        if (typeof obj === "string")
+            th.innerText = obj;
+        else
+            th.appendChild(obj);
+
+        th.innerText = obj;
+        if (columnAlign[j]) th.style.textAlign = columnAlign[j];
+        Object.entries(headerStyle).forEach(([key, value]) => {
+            th.style[key] = value;
+        });
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+
+    tableData.forEach(rowData => {
+        const tr = document.createElement('tr');
+        rowData.forEach((obj, j) => {
+            const td = document.createElement('td');
+
+            if (typeof obj === "string")
+                td.innerText = obj;
+            else
+                td.appendChild(obj);
+
+            if (columnAlign[j]) td.style.textAlign = columnAlign[j];
+            Object.entries(contentStyle).forEach(([key, value]) => {
+                td.style[key] = value;
+            });
+            tr.appendChild(td);
+        });
+        table.appendChild(tr);
+    });
+
+    return table;
+}

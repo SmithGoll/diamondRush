@@ -414,12 +414,25 @@ async function renderDemo(chunk, demo, config) {
     }
 
     const {blocksFileChunks, otherFiles} = await parseRequiredFilesToRender(config, hardcodedDemoInfo.worldIndex)
+    let stageImage = null
     const renderStage = async () => {
-        engine.removeElementsById("background")
-        engine.removeElementsById("player")
-        engine.removeElementsById("foreground")
-        engine.removeElementsById("foreground+1")
-        await stage.renderToEngine(engine, blocksFileChunks, otherFiles, hardcodedDemoInfo.worldIndex, config)
+        const stageCanvas = document.createElement("canvas")
+        const stageEngine = new CanvasEngine2D({
+            canvas: stageCanvas,
+            appName: "diamondRush-browser-all_files_new-utils-renderCanvasEngine2DImage",
+            imageW: stage.width * 24,
+            imageH: stage.height * 24,
+            backgroundColor: CanvasEngine2DVariables.COLORS.BLACK,
+            scale: config.render_scale,
+            customBackground: true
+        })
+        await stage.renderToEngine(stageEngine, blocksFileChunks, otherFiles, hardcodedDemoInfo.worldIndex, hardcodedDemoInfo.stageIndex, config)
+        stageEngine.render()
+
+        stageImage = stageEngine.image
+
+        engine.removeElementsById("stage_image")
+        engine.addElement(engine.createImage("stage_image", stageImage), 0, 0, 0)
     }
 
     let operationI = 0, operationTick = 0, operationData = null
@@ -630,8 +643,9 @@ async function renderDemo(chunk, demo, config) {
         if (!breakCompletely) setTimeout(render, delay)
     }
 
-    const originImageData = new CanvasEngine2DImageData(24, 24, new Uint32Array(24 * 24).fill(CanvasEngine2DVariables.COLORS.ToNumber(config.sprites_animation_origin_background)))
-    engine.addElement(engine.createImage("origin", originImageData), originX, originY, 10)
+    // const originImageData = new CanvasEngine2DImageData(24, 24, new Uint32Array(24 * 24).fill(CanvasEngine2DVariables.COLORS.ToNumber(config.sprites_animation_origin_background)))
+    // engine.addElement(engine.createImage("origin", originImageData), originX, originY, 10)
+
     // Move the camera so the origin is in the middle
     moveCamera(originBlockX, originBlockY)
 

@@ -70,13 +70,11 @@ function applyConfigToForm(form, config) {
     if (config.hasOwnProperty("sprites_background"))                  form["sprites_background"].value = colorArrayToHexColorString(config.sprites_background)
     if (config.hasOwnProperty("sprites_animation_origin"))            form["sprites_animation_origin"].value = config.sprites_animation_origin
     if (config.hasOwnProperty("sprites_animation_origin_background")) form["sprites_animation_origin_background"].value = colorArrayToHexColorString(config.sprites_animation_origin_background)
-    if (config.hasOwnProperty("stages_render_background"))            form["stages_render_background"].checked = config.stages_render_background
-    if (config.hasOwnProperty("stages_render_player"))                form["stages_render_player"].checked = config.stages_render_player
-    if (config.hasOwnProperty("stages_render_foreground"))            form["stages_render_foreground"].checked = config.stages_render_foreground
     if (config.hasOwnProperty("stages_render_special"))               form["stages_render_special"].checked = config.stages_render_special
     if (config.hasOwnProperty("stages_render_chest_contents"))        form["stages_render_chest_contents"].checked = config.stages_render_chest_contents
     if (config.hasOwnProperty("stages_render_unknown"))               form["stages_render_unknown"].checked = config.stages_render_unknown
-    if (config.hasOwnProperty("stages_render_pot_fan_air"))           form["stages_render_pot_fan_air"].checked = config.stages_render_pot_fan_air
+    if (config.hasOwnProperty("stages_render_decoration"))           form["stages_render_decoration"].checked = config.stages_render_decoration
+    if (config.hasOwnProperty("stages_render_invisible"))             form["stages_render_invisible"].checked = config.stages_render_invisible
     if (config.hasOwnProperty("enable_delayed_rendering"))            form["enable_delayed_rendering"].checked = config.enable_delayed_rendering
     // @formatter:on
 }
@@ -196,13 +194,11 @@ async function loadAndOpenCurrentFile(e = null) {
         sprites_background: hexColorStringToColorArray(form["sprites_background"].value),
         sprites_animation_origin: form["sprites_animation_origin"].value,
         sprites_animation_origin_background: hexColorStringToColorArray(form["sprites_animation_origin_background"].value),
-        stages_render_background: form["stages_render_background"].checked,
-        stages_render_player: form["stages_render_player"].checked,
-        stages_render_foreground: form["stages_render_foreground"].checked,
         stages_render_special: form["stages_render_special"].checked,
         stages_render_chest_contents: form["stages_render_chest_contents"].checked,
         stages_render_unknown: form["stages_render_unknown"].checked,
-        stages_render_pot_fan_air: form["stages_render_pot_fan_air"].checked,
+        stages_render_decoration: form["stages_render_decoration"].checked,
+        stages_render_invisible: form["stages_render_invisible"].checked,
         enable_delayed_rendering: form["enable_delayed_rendering"].checked,
         async parseOtherFile(fileName) {
             const file = files.find(file => file.fileName === fileName) || null;

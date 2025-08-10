@@ -1012,7 +1012,9 @@ class CanvasEngine2D {
                 methods: {
                     drawImageImage: CanvasEngine2DVariables.METHODS.DRAWIMAGEIMAGE.FIRST
                 },
-                scale: 1
+                scale: 1,
+                customBackground: false,
+                renderText: true
             }, ...args
         }
         this.time = {
@@ -1887,7 +1889,7 @@ class CanvasEngine2D {
         this.time.render.endToStart = this.time.render.start - this.time.render.end
         this.rendersNum++
         if (this.image.length) this.lastImage = this.image
-        this.createBlankImage(true)
+        if (!this.args.customBackground) this.createBlankImage(true)
         var elementsZ = {}, element
         for (element of this.elements.filter(a => a.element.type !== "text")) {
             if (!Object.keys(elementsZ).includes(element.z.toString())) elementsZ[element.z.toString()] = []
@@ -1922,14 +1924,18 @@ class CanvasEngine2D {
             }
         }
         this.renderImageToCanvas()
-        for (element of this.elements.filter(a => a.element.type === "text")) {
-            element.element.beforeRender()
-            if (element.element.checkRender(element, this.args.camera)) {
-                this.ctx.fillStyle = element.element.color || "black"
-                this.ctx.font = element.element.font || "10px sans-serif"
-                this.ctx.fillText(element.element.text, element.x - this.args.camera.x, element.y - this.args.camera.y)
+
+        if (this.args.renderText) {
+            for (element of this.elements.filter(a => a.element.type === "text")) {
+                element.element.beforeRender()
+                if (element.element.checkRender(element, this.args.camera)) {
+                    this.ctx.fillStyle = element.element.color || "black"
+                    this.ctx.font = element.element.font || "10px sans-serif"
+                    this.ctx.fillText(element.element.text, element.x - this.args.camera.x, element.y - this.args.camera.y)
+                }
             }
         }
+
         this.renderResultCanvas()
         this.time.render.end = Date.now()
         this.time.render.total = this.time.render.end - this.time.render.start

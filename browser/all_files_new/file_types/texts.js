@@ -4,7 +4,7 @@
  * @home https://jakub-augustyn.web.app/
  */
 
-import {copyToClipboardButton, createElement} from "../utils.js";
+import {copyToClipboardButton, createElement, createTable} from "../utils.js";
 
 /**
  * @param chunk {FileChunk}
@@ -47,27 +47,11 @@ export async function render(chunk, parsed, config) {
     /** @type {string[]} */
     const texts = parsed.texts
 
-    const tbody = createElement("tbody", [])
-    const container = createElement("table", [
-        createElement("thead", [
-            createElement("tr", [
-                createElement("th", "Text #"),
-                createElement("th", "Content"),
-                createElement("th", "Copy"),
-            ])
-        ]),
-        tbody
-    ])
+    const content = []
     for (let i = 0; i < texts.length; i++) {
         const text = texts[i]
-        tbody.appendChild(createElement("tr", [
-            createElement("td", (i + 1).toString()),
-            createElement("td", text),
-            createElement("td", [
-                copyToClipboardButton(text)
-            ]),
-        ]))
+        content.push([(i + 1).toString(), text, copyToClipboardButton(text)])
     }
 
-    return container
+    return createTable(['Text ID', 'Content', 'Copy'], content)
 }

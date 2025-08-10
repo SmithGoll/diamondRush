@@ -17,6 +17,53 @@ const mapIDToBlocksFileName = new Map([
     ["siberia", "2.f"],
 ])
 
+class BlockWrapper {
+    /**
+     * @type {image: Promise<CanvasEngine2DImageData|null>, dx: number, dy: number}
+     */
+    image
+    /**
+     * @type {string}
+     */
+    elementId
+    /**
+     * @type {number}
+     */
+    layer
+    /**
+     * @type {boolean}
+     */
+    handlePlayerLayer
+    /**
+     * @type {function}
+     */
+    customHandler
+    /**
+     * @type {}
+     */
+    customData
+
+    constructor(image, elementId, layer = 0, handlePlayerLayer = true, customHandler = null, customData = null) {
+        this.image = image
+        this.elementId = elementId
+        this.layer = layer
+        this.handlePlayerLayer = handlePlayerLayer
+        this.customHandler = customHandler
+        this.customData = customData
+    }
+
+    addToEngine(engine, x, y, specData) {
+        if (this.image !== null) {
+            engine.addElement(engine.createImage(this.elementId, this.image.image), x + this.image.dx, y + this.image.dy, this.layer)
+        }
+
+        if (this.customHandler !== null) {
+            this.customHandler(engine, this.elementId, x, y, specData, this.customData)
+        }
+        return this.handlePlayerLayer
+    }
+}
+
 export class Stage {
     /**
      * @readonly
@@ -117,8 +164,9 @@ export class Stage {
                 ctx.fillStyle = "black"
                 ctx.font = `${6 * s}px Arial`
                 ctx.textBaseline = "top"
-                ctx.fillText(block.background.toString().padStart(3, ""), bx + s, by + s, bs)
-                ctx.fillText(block.player.toString().padStart(3, ""), bx + s, by + 9 * s, bs)
+
+                ctx.fillText(block.player.toString().padStart(3, ""), bx + s, by + s, bs)
+                ctx.fillText(block.background.toString().padStart(3, ""), bx + s, by + 9 * s, bs)
                 ctx.fillText(block.foreground.toString().padStart(3, ""), bx + s, by + 17 * s, bs)
             }
         }
@@ -139,7 +187,12 @@ export class Stage {
      * @param gen4 {FileChunk[]|null}
      * @param mmv {FileChunk[]|null}
      * @param b0 {FileChunk[]|null}
+     * @param ui {FileChunk[]|null}
+     * @param mm0 {FileChunk[]|null}
+     * @param b1 {FileChunk[]|null}
+     * @param mm1 {FileChunk[]|null}
      * @param worldIndex {0|1|2}
+     * @param stageIndex {number}
      * @param config {TParseConfig|null}
      * @returns {HTMLCanvasElement}
      */
@@ -151,17 +204,21 @@ export class Stage {
         gen3,
         gen4,
         mmv,
-        b0
-    }, worldIndex, config = null) {
+        b0,
+        ui,
+        mm0,
+        b1,
+        mm1
+    }, worldIndex, stageIndex, config = null) {
         config = config || {
-            stages_render_background: true,
-            stages_render_player: true,
-            stages_render_foreground: true,
             stages_render_special: true,
             stages_render_chest_contents: true,
             stages_render_unknown: true,
-            stages_render_pot_fan_air: true
+            stages_render_decoration: true,
+            stages_render_invisible: true
         }
+
+        engine.args.renderText = config.stages_render_invisible
 
         /**
          * Gets a module from a file's chunk.
@@ -171,10 +228,14 @@ export class Stage {
          * @param paletteI {number}
          * @return {Promise<CanvasEngine2DImageData|null>}
          */
-        async function getModule(file, chunkI, moduleI, paletteI) {
+        async function getModule(file, chunkI, moduleI, paletteI, dx = 0, dy = 0) {
             if (file === null) return null
             const sprite = (await file[chunkI].parse()).data.sprite
-            return sprite.modules[moduleI].getParsedData(paletteI)
+            return {
+                image: await sprite.modules[moduleI].getParsedData(paletteI),
+                dx: dx,
+                dy: dy
+            }
         }
 
         /**
@@ -185,32 +246,407 @@ export class Stage {
          * @param paletteI {number}
          * @return {Promise<CanvasEngine2DImageData|null>}
          */
-        async function getFrame(file, chunkI, frameI, paletteI) {
+        async function getFrame(file, chunkI, frameI, paletteI, ox = 0, oy = 0) {
             if (file === null) return null
             const sprite = (await file[chunkI].parse()).data.sprite
-            return sprite.frames[frameI].getParsedData(paletteI)
+            return {
+                image: await sprite.frames[frameI].getParsedData(paletteI),
+                dx: sprite.frames[frameI].bbox.x + ox,
+                dy: sprite.frames[frameI].bbox.y + oy
+            }
+        }
+
+        function enginePutText(engine, id, text, color, ox, oy, layer) {
+            engine.addElement(
+                engine.createText(id, text, color, "13px monospace"),
+                ox, oy, layer
+            )
+        }
+
+        function enginePutImage(engine, id, image, ox, oy, layer) {
+            engine.addElement(engine.createImage(id, image.image), ox + image.dx, oy + image.dy, layer)
+        }
+
+        function imageDataFlipX(image) {
+            const w = image.width,
+                  h = image.height
+            const data = image.data
+
+            const flipWidth = Math.floor(w / 2)
+            for (let y = 0; y < h; y++) {
+                const posY = y * w
+                for (let x = 0; x < flipWidth; x++) {
+                    const tmp = data[posY + x]
+                    data[posY + x] = data[posY + w - 1 - x]
+                    data[posY + w - 1 - x] = tmp
+                }
+            }
+            // image.data = data
+            return image
+        }
+
+        function drawFanPotAir(engine, elementId, x, y, specData, customData) {
+            const stage = customData[0]
+            const fanPotAirTile = customData[1]
+
+            const blockX = x / 24
+            const blockY = y / 24
+
+            for (let i = 1; i < 10; i++) {
+                if (blockY - i < 0) break
+                const block = stage.getBlock(blockX, blockY - i)
+                if (block.player !== 255 && block.player >= 80) break
+                if ([10, 18, 22, 23, 30, 34, 35, 37, 44, 47, 79].includes(block.player)) break
+                engine.drawImageImage(x + fanPotAirTile.dx, y - (i * 24) + fanPotAirTile.dy, fanPotAirTile.image)
+            }
+        }
+
+        function drawSpawnPointDoor(engine, elementId, x, y, specData, customData) {
+            let blockX = x - 48
+
+            // set layer to 1 make sure door rendering fine
+            enginePutImage(engine, "spawn_point_door", customData[0], blockX, y, 1)
+            enginePutImage(engine, "spawn_point_door", customData[1], blockX, y, 1)
+        }
+
+        function drawSnake(engine, elementId, x, y, specData, customData) {
+            let snakeTile = customData[1]
+            switch (specData) {
+                case 0:
+                    snakeTile = customData[2]
+                    break
+                case 1:
+                case 3:
+                    snakeTile = customData[0]
+                    break
+            }
+
+            enginePutImage(engine, elementId, snakeTile, x, y, 1)
+        }
+
+        function drawPurpleGemCount(engine, elementId, x, y, specData, customData) {
+            let gemCount = specData
+            const digitFont = customData
+
+            // Draw digit
+            for (let i = 0; gemCount > 0; i++) {
+                const ox = specData >= 10 ? 12 - (7 * i) : 8
+                const oy = 12 // 9 + 15/2 - 9/2
+
+                const idx = gemCount % 10
+
+                enginePutImage(engine, "purple_gem_count", digitFont[idx], x + ox, y + oy, 2)
+
+                gemCount = Math.floor(gemCount / 10)
+            }
+        }
+
+        function drawIceLaserShooter(engine, elementId, x, y, specData, customData) {
+            const shooterTile = customData[specData === 4 ? 0 : 1]
+            engine.drawImageImage(x, y - 23, shooterTile.image)
+
+            if (!config.stages_render_decoration) return
+
+            // Draw laser
+            const stage = customData[2]
+
+            let drawDeco = true
+            let laserWidth = 0
+            const moveDirection = specData === 4 ? -1 : 1
+
+            let blockX = x / 24 + moveDirection
+            let blockY = y / 24 - 1
+            while (blockX >= 0 && blockX < stage.width) {
+                const block = stage.getBlock(blockX, blockY)
+                if (block.player === 255) {
+                    const laserShooter = stage.getBlock(blockX, blockY + 1)
+                    if (laserShooter.player === 48) {
+                        if (laserShooter.background === specData)
+                            laserWidth += 12
+                        drawDeco = false
+                        break
+                    }
+                    blockX += moveDirection
+                } else break
+
+                laserWidth += 24
+            }
+
+            if (laserWidth !== 0) {
+                blockX *= 24
+                blockY *= 24
+
+                if (drawDeco) {
+                    const decoTile = customData[4 + (specData === 4 ? 0 : 1)]
+
+                    enginePutImage(engine, `${elementId}_deco`, decoTile, blockX, blockY, 1)
+                }
+
+                laserWidth += 12
+                blockY += 10
+
+                if (moveDirection === 1)
+                    blockX -= laserWidth
+                else
+                    blockX += 24
+
+                blockX += (laserWidth % 24 === 0 ? 12 : 0) * moveDirection
+
+                const iceLaserPosition = customData[3]
+                iceLaserPosition.push({
+                    x: blockX,
+                    y: blockY,
+                    width: laserWidth
+                })
+            }
+        }
+
+        function drawTurtleDirection(engine, elementId, x, y, specData, customData) {
+            if (specData === 2 || specData === 4)
+                enginePutText(engine, "turtle_direction", specData === 2 ? "L" : "R", "#FF0", x + 8, y + 16, 2)
+        }
+
+        function drawText(engine, elementId, x, y, specData, customData) {
+            enginePutText(engine, elementId, customData[0], customData[1], x + customData[2], y + customData[3], customData[4])
+        }
+
+        function drawWater(engine, elementId, x, y, specData, customData) {
+            // Draw water count
+            enginePutText(engine, "sewer_water_count", specData.toString(), "#0FF", x + (specData < 10 ? 8 : 4), y + 16, 2)
+
+            if (!config.stages_render_decoration) return
+
+            // Draw water
+            const stage = customData[0]
+            const waterTile = customData[1]
+            const waterSurfaceTiles = customData[2]
+
+            let bottomBlockX = x / 24,
+                bottomBlockY = y / 24
+
+            function isAccessibleBlock(blockX, blockY) {
+                const playerBlock = stage.getBlock(blockX, blockY).player
+                return ![10, 35, 37].includes(playerBlock) && (playerBlock === 255 || playerBlock < 80)
+            }
+
+            function findDownGap(direction) {
+                let i
+                for (i = bottomBlockX; isAccessibleBlock(i, bottomBlockY); i += direction) {
+                    if (isAccessibleBlock(i, bottomBlockY + 1)) {
+                        bottomBlockX = i
+                        bottomBlockY++
+
+                        return true
+                    }
+                }
+                bottomBlockX = i - 1 * direction
+                return false
+            }
+
+            function drawWaterTile(count, tile, dx = 0, dy = 0) {
+                for (let i = 0; i < count; i++) {
+                    enginePutImage(engine, "water", tile, (bottomBlockX - i) * 24 + dx, bottomBlockY * 24 + dy, 1)
+                }
+            }
+
+            while (true) {
+                // search down gap
+                if (isAccessibleBlock(bottomBlockX, bottomBlockY + 1)) {
+                    bottomBlockY++
+                    continue
+                }
+
+                // search left gap
+                if (findDownGap(-1)) continue
+
+                // search right gap
+                if (findDownGap(1)) continue
+
+                break
+            }
+
+            while (specData > 0) {
+                let waterUsed = 0
+
+                for (let i = bottomBlockX; isAccessibleBlock(i, bottomBlockY); i--) {
+                    waterUsed++
+                }
+
+                if (specData < waterUsed + Math.floor(waterUsed / 2)) {
+                    drawWaterTile(waterUsed, waterSurfaceTiles[0])
+                    drawWaterTile(waterUsed, waterSurfaceTiles[1], 0, 8)
+                    drawWaterTile(waterUsed, waterSurfaceTiles[1], 0, 16)
+                    break
+                } else if (specData === Math.floor(waterUsed / 2)) {
+                    drawWaterTile(waterUsed, waterSurfaceTiles[0], 0, 16)
+                    break
+                } else {
+                    drawWaterTile(waterUsed, waterTile)
+                }
+
+                // find up gap
+                for (let i = bottomBlockX; !isAccessibleBlock(i, bottomBlockY - 1); i--) {
+                    bottomBlockX--
+                }
+                bottomBlockY--
+                for (let i = bottomBlockX + 1; isAccessibleBlock(i, bottomBlockY); i++) {
+                    bottomBlockX++
+                }
+
+                specData -= waterUsed
+            }
+        }
+
+        function drawSpikeDirection(engine, elementId, x, y, specData, customData) {
+            const isFacingLeft = specData === 4
+
+            if (config.stages_render_decoration) {
+                const directionTile = customData[isFacingLeft ? 0 : 1]
+
+                enginePutImage(engine, "spike_direction", directionTile, x, y, 1)
+            } else {
+                enginePutText(engine, "spike_direction", isFacingLeft ? "L" : "R", "#FF0", x + 8, y + 16, 2)
+            }
+        }
+
+        function drawPlateId(engine, elementId, x, y, specData, customData) {
+            enginePutText(engine, "pressure_plate_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 11, 2)
+        }
+
+        function drawLabelText(engine, elementId, x, y, specData, customData) {
+            enginePutText(engine, elementId, customData, "#FFF", x, y + 11, 2)
+            enginePutText(engine, elementId, specData.toString(), "#FFF", x + (specData < 10 ? 8 : 1), y + 21, 2)
+        }
+
+        function drawHintTile(engine, elementId, x, y, specData, customData) {
+            if (config.stages_render_decoration) {
+                const hintTile = customData[specData > 1 ? 0 : specData]
+
+                enginePutImage(engine, elementId, hintTile, x, y, 0)
+            }
+        }
+
+        function drawExit(engine, elementId, x, y, specData, customData) {
+            const exitTile = customData[specData === 2 ? 0 : 1]
+
+            if (elementId.includes("secret"))
+                enginePutText(engine, elementId, "SECRET", "#0FF", x + 24, y + 14, 2)
+
+            enginePutImage(engine, elementId, exitTile, x, y, 0)
+        }
+
+        function drawId(engine, elementId, x, y, specData, customData) {
+            enginePutText(engine, `${elementId}_id`, specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
+        }
+
+        function drawDoorHead(engine, elementId, x, y, specData, customData) {
+            const doorHeadTile = customData[1]
+            const block = customData[0].getBlock(x / 24, y / 24 - 1)
+
+            if (![8, 9].includes(block.foreground)) {
+                // PS: set layer to 0.5
+                enginePutImage(engine, elementId, doorHeadTile, x, y, 0.5)
+            }
+
+            enginePutText(engine, "door_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
+        }
+
+        function drawChest(engine, elementId, x, y, specData, customData) {
+            const contentId = customData[13].getBlock(x / 24, y / 24).player
+
+            // const chestTile = [2, 5, 7, 41].includes(contentId) ? customData[16] : customData[15]
+            const chestTileIdx = [2, 5, 7, 41].includes(contentId) ? 16 : 15
+            const chestTile = customData[chestTileIdx]
+
+            elementId = chestTileIdx === 15 ? "red_chest" : "chest"
+
+            // PS: set layer to 0.5
+            enginePutImage(engine, elementId, chestTile, x, y, 0.5)
+
+            if (config.stages_render_chest_contents) {
+                const digitFont = customData[14]
+                const contentMap = [2, 4, 5, 6, 24, 26, 27, 40, 42, 51, 52, 53]
+
+                let contentCount = 0
+                let contentTile = null
+
+                if (contentId === 7 || contentId === 41) {
+                    contentCount = contentId === 7 ? 10 : specData
+                    contentTile = customData[12]
+                } else {
+                    for (let i = 0; i < contentMap.length; i++) {
+                        if (contentId === contentMap[i]) {
+                            contentTile = customData[i]
+                            break
+                        }
+                    }
+                }
+
+                if (contentTile === null) {
+                    enginePutText(engine, `${elementId}_unknown_content`, "???", "#F00", x + 1, y + 20, 3)
+                    return
+                }
+
+                const dx = Math.floor(12 - contentTile.image.width / 2)
+                const dy = Math.floor(12 - contentTile.image.height / 2) - 12
+
+                // PS: set layer to 1
+                // Do not use enginePutImage in here, we dont need the offset of image
+                engine.addElement(engine.createImage(`${elementId}_content`, contentTile.image), x + dx, y + dy, 1)
+
+                // Draw digit
+                for (let i = 1; contentCount > 0; i++) {
+                    const ox = 24 - (7 * i) + dx
+                    const oy = 24 - 9 + dy
+
+                    const idx = contentCount % 10
+
+                    enginePutImage(engine, `${elementId}_content_count`, digitFont[idx], x + ox, y + oy, 2)
+
+                    contentCount = Math.floor(contentCount / 10)
+                }
+            }
+        }
+
+        function drawSpike(engine, elementId, x, y, specData, customData) {
+            const direction = [3, 33].includes(specData) ? 1 /* down */: -1 /* up */
+            const spikeHeadTile = direction === 1 ? customData[0] : customData[1]
+
+            // Draw stick
+            for (let i = 0; i < 2; i++) {
+                const spikeStick = direction === 1 ? customData[2 + i] : customData[3 - i]
+
+                enginePutImage(engine, `${elementId}_stick`, spikeStick, x, y, 0)
+                y += 24 * direction
+            }
+
+            enginePutImage(engine, elementId, spikeHeadTile, x, y, 0)
+        }
+
+        function drawFire(engine, elementId, x, y, specData, customData) {
+            if (config.stages_render_decoration) {
+                enginePutImage(engine, `${elementId}_fire`, customData, x, y, 0)
+            }
         }
 
         const backgroundTile = await getModule(blocksFileChunks, 3, 0, 0)
 
-        const boulderTile = await getModule(blocksFileChunks, 0, 0, 0)
+        const boulderTile = worldIndex === 1 ?
+            await getFrame(blocksFileChunks, 0, 0, 0) :
+            await getModule(blocksFileChunks, 0, 0, 0)
 
         const leafTile = await getModule(blocksFileChunks, 1, 0, 0)
 
         const wallTilesSprite = (await blocksFileChunks[2].parse()).data.sprite
-        // playerLayerNumber : index
-        // 81: 1
-        // 90: 10
-        // 94: 14
-        // 104: 24
-        // 110: 30
-        // 111: 31
-        // 113: 33
         const wallTiles = Object.fromEntries(
             new Array(wallTilesSprite.frames.length)
                 .fill(0)
                 .map((_, index) =>
-                    [80 + index, wallTilesSprite.frames[index].getParsedData(0)]
+                    [80 + index, {
+                        image: wallTilesSprite.frames[index].getParsedData(0),
+                        dx: wallTilesSprite.frames[index].bbox.x,
+                        dy: wallTilesSprite.frames[index].bbox.y
+                    }]
                 )
         )
 
@@ -235,17 +671,26 @@ export class Stage {
         const snakeRedRightTile = worldIndex === 0 ?
             await getFrame(gen1, 5, 15, 1) :
             await getFrame(gen1, 7, 0, 1)
+        const dizzySnakeTile = await getFrame(gen1, 5, 2, 1)
 
         const fireSpitterLeftTile = await getFrame(gen0, 9, 0, 0),
             fireSpitterRightTile = await getFrame(gen0, 9, 1, 0)
 
+        const fireRightTile = await getFrame(gen1, 0, 7, 0, 24)
+        const fireLeftTile = {
+            image: imageDataFlipX(fireRightTile.image.clone()),
+            dx: -3 * 24 + 3,
+            dy: 0
+        }
+
         const beansTile = await getModule(gen0, 7, 0, worldIndex === 2 ? 1 : 0)
 
         const pressurePlateTile = await getModule(gen2, 9, 0, 0)
+        pressurePlateTile.dy = 11
 
-        const mysticMalletTile = await getModule(gen1, 9, 0, 0),
-            grippingHookTile = await getModule(gen1, 9, 1, 0),
-            freezeMalletTile = await getModule(gen1, 9, 2, 0),
+        const mysticMalletTile = await getModule(gen1, 9, 0, 0, 0, 1),
+            grippingHookTile = await getModule(gen1, 9, 1, 0, 0, 4),
+            freezeMalletTile = await getModule(gen1, 9, 2, 0, 0, 1),
             mysticPotionTile = await getModule(gen2, 7, 0, 0)
 
         const exitLeftTile = await getModule(cm, 0, 1, 0),
@@ -258,21 +703,30 @@ export class Stage {
 
         const decoration2x2 = worldIndex === 0 ?
             [
-                [await getFrame(gen0, 4, 0, 0), await getFrame(gen0, 4, 2, 0)],
-                [await getFrame(gen0, 4, 4, 0), await getFrame(gen0, 4, 6, 0)]
+                await getFrame(gen0, 4, 0, 0), await getFrame(gen0, 4, 2, 0),
+                await getFrame(gen0, 4, 4, 0), await getFrame(gen0, 4, 6, 0)
             ] :
             worldIndex === 1 ?
                 [
-                    [await getFrame(gen2, 1, 4, 0), await getFrame(gen2, 1, 6, 0)],
-                    [await getFrame(gen2, 1, 0, 0), await getFrame(gen2, 1, 2, 0)]
+                    await getFrame(gen2, 1, 4, 0), await getFrame(gen2, 1, 6, 0),
+                    await getFrame(gen2, 1, 0, 0), await getFrame(gen2, 1, 2, 0)
                 ] :
                 [
-                    [magicPadlockTile, magicPadlockTile],
-                    [magicPadlockTile, magicPadlockTile]
+                    magicPadlockTile, magicPadlockTile,
+                    magicPadlockTile, magicPadlockTile
                 ]
 
-        const chestRedTile = await getFrame(gen2, 2, 0, 0)
-        const chestBrownTile = await getFrame(gen3, 3, 0, 0)
+        const chestRedTile = config.stages_render_chest_contents ?
+            await getFrame(gen2, 2, 1, 0, -1) :
+            await getFrame(gen2, 2, 0, 0, -1)
+        const chestBrownTile = config.stages_render_chest_contents ?
+            await getFrame(gen3, 3, 2, 0, -2, 1) :
+            await getFrame(gen3, 3, 0, 0, -2, 1)
+
+        // Position fix
+        // chestRedTile.dx -= 1
+        // chestBrownTile.dx -= 2
+        // chestBrownTile.dy += 1
 
         const goldKeyTile = await getModule(gen0, 2, 0, 0),
             silverKeyTile = await getModule(gen0, 2, 0, 1)
@@ -289,21 +743,20 @@ export class Stage {
         const silverDiamondTile = await getFrame(mmv, 2, 0, 0)
         const iceCrystalTile = await getFrame(mmv, 1, 0, 0)
 
-        const greatAnacondaHeadTile = await getFrame(b0, 0, 6, 0)
-        const greatAnacondaBlockUpTile = await getFrame(b0, 1, 0, 0),
-            greatAnacondaBlockDownTile = await getFrame(b0, 1, 1, 0)
-
         const compassTile = await getModule(gen3, 1, 0, 0)
 
-        const spikeTileTopHead = await getFrame(gen1, 1, 0, 0),
-            spikeTileTopStick = await getFrame(gen1, 1, 1, 0),
-            spikeTileBottomHead = await getFrame(gen1, 1, 3, 0),
-            spikeTileBottomStick = await getFrame(gen1, 1, 2, 0)
+        const spikeTileTopHead = await getFrame(gen1, 1, 0, 0, 3),
+            spikeTileTopStick = await getFrame(gen1, 1, 1, 0, 3),
+            spikeTileBottomHead = await getFrame(gen1, 1, 3, 0, 3),
+            spikeTileBottomStick = await getFrame(gen1, 1, 2, 0, 3)
 
         const knightRight = await getFrame(gen1, 3, 0, 0),
-            knightLeft = await getFrame(gen1, 3, 1, 0)
+            knightLeft = await getFrame(gen1, 3, 1, 0, 24)
+        // knightLeft.dx += 24
 
-        const spikeBall = await getModule(gen1, 2, 2, 0)
+        const spikeBall = await getModule(gen1, 2, 2, 0),
+            spikeDirectionDecoLeft = await getModule(gen1, 2, 10, 0, 16, 16),
+            spikeDirectionDecoRight = await getModule(gen1, 2, 5, 0, -8, 16)
 
         const trapdoorRed = await getFrame(gen2, 4, 4, 0),
             trapdoorBlue = await getFrame(gen2, 4, 0, 1),
@@ -315,649 +768,252 @@ export class Stage {
         const bomb = await getFrame(gen0, 5, 0, 0),
             bombCloth = await getModule(gen2, 5, 0, 0)
 
-        const sewer = await getFrame(gen0, 6, 0, 0)
+        const sewer = await getModule(gen0, 6, 0, 0)
 
         const icicle = await getFrame(gen3, 4, 0, 0),
             icicleBroken = await getFrame(gen3, 4, 3, 0)
 
-        const turtleDownTile = await getFrame(gen4, 1, 5, 0),
-            turtleUpTile = await getFrame(gen4, 1, 1, 0)
+        const turtleTile = await getFrame(gen4, 1, 1, 0)
 
         const monkeyTile = await getFrame(gen3, 5, 1, 0)
 
         const waspTile = await getFrame(gen3, 7, 12, 0)
 
+        const waterTile = await getModule(gen2, 6, 16, 0),
+              waterSurfaceHeadTile = await getFrame(gen2, 6, 15, 0),
+              waterSurfaceBottomTile = await getFrame(gen2, 6, 16, 0)
+
         const fanPot = await getFrame(gen2, 3, 0, 0),
-            fanPotAir = await getFrame(gen2, 3, 5, 0)
+            fanPotAir = await getFrame(gen2, 3, 5, 0, 1)
+        // fanPotAir.dx = 2
 
         const iceLaserShooterLeft = await getFrame(gen3, 2, 0, 0),
             iceLaserShooterRight = await getFrame(gen3, 2, 1, 0)
 
-        // For anyone who has to read through this massive code: I'M VERY SORRY
-        // I know I shouldn't copy-paste the text rendering code
-        // I know it's big/too long
-        // Again, I'm sorry
+        const iceLaserDecoRight = await getFrame(gen4, 0, 3, 0)
+        if (iceLaserDecoRight !== null) iceLaserDecoRight.dy += 12
 
+        const iceLaserDecoLeft = iceLaserDecoRight ? {
+            image: imageDataFlipX(iceLaserDecoRight.image.clone()),
+            dx: iceLaserDecoRight.dx * -1 + 10,
+            dy: iceLaserDecoRight.dy
+        } : null
+
+        const iceLaserPosition = []
+
+        // Load digit module image
+        const digitFont = []
+        for (let i = 0; i < 10; i++) {
+            digitFont.push(await getModule(ui, 2, i, 0))
+        }
+
+        const chestContentData = [
+            gemRedTile,
+            goldKeyTile,
+            silverKeyTile,
+            oneUpTile,
+            mysticMalletTile,
+            freezeMalletTile,
+            grippingHookTile,
+            mysticPotionTile,
+            compassTile,
+            silverDiamondTile,
+            iceCrystalTile,
+            fireCrystalTile,
+            gemVioletTile,
+            this,
+            digitFont,
+            chestRedTile,
+            chestBrownTile
+        ]
+
+        const foregroundBlockMap = new Map([
+            [0,  new BlockWrapper(null, "demo", 0, true, drawLabelText, "DEM")],
+            [1,  new BlockWrapper(null, "screen_shake", 0, false, drawText, ["SHK", "#F00", 1, 16, 2])],
+            [2,  new BlockWrapper(null, "hint", 0, false, drawHintTile, [mysticMalletTile, grippingHookTile])],
+
+            [4,  new BlockWrapper(checkpointTile, "checkpoint", 0, true,
+                (engine, elementId, x, y, specData, customData) => {
+                    enginePutText(engine, "checkpoint_id", specData.toString(), "#FF0000", x + 8, y + 16, 2)
+                })],
+
+            [5,  new BlockWrapper(null, "exit", 0, false, drawExit, [exitRightTile, exitLeftTile])],
+            [6,  new BlockWrapper(pressurePlateTile, "pressure_plate", 0, false, drawPlateId)],
+            [7,  new BlockWrapper(doorBottomTile, "door_bottom", 0, false, drawDoorHead, [this, doorHeadTile])],
+            [8,  new BlockWrapper(silverKeyholeTile, "silver_keyhole", 0, false, drawId)],
+            [9,  new BlockWrapper(goldKeyholeTile, "gold_keyhole", 0, false, drawId)],
+            [14, new BlockWrapper(null, "red_chest", 0.5, false, drawChest, chestContentData)],
+            [17, new BlockWrapper(null, "defeat_everyone_label", 0, true, drawLabelText, "DEL")],
+            [26, new BlockWrapper(null, "defeat_everyone_trigger", 0, true, drawLabelText, "DET")],
+            [28, new BlockWrapper(null, "secret_exit", 0, false, drawExit, [exitRightTile, exitLeftTile])],
+            [33, new BlockWrapper(null, "chest", 0.5, false, drawChest, chestContentData)],
+            [34, new BlockWrapper(icicleBroken, "icicle_broken", 0, false)]
+        ])
+
+        const blockMap = new Map([
+            [0,  new BlockWrapper(boulderTile, "boulder")],
+            [1,  new BlockWrapper(gemVioletTile, "purple_gem")],
+            [8,  new BlockWrapper(bomb, "bomb")],
+            [10, new BlockWrapper(leafTile, "leaf")],
+            [11, new BlockWrapper(fireballTile, "fireball", 1)],
+            [12, new BlockWrapper(magicPadlockTile, "gem_padlock", 0, true, drawPurpleGemCount, digitFont)],
+            [14, new BlockWrapper(spikeBall, "spike_ball", 1, true, drawSpikeDirection, [spikeDirectionDecoLeft, spikeDirectionDecoRight])],
+
+            [16, new BlockWrapper(null, "knight", 1, true,
+                (engine, elementId, x, y, specData, customData) => {
+                    const knightTile = customData[specData === 4 ? 0 : 1]
+
+                    enginePutImage(engine, elementId, knightTile, x, y, 1)
+                }, [knightLeft, knightRight])],
+
+            [18, new BlockWrapper(trapdoorSwitch, "trapdoor_switcher")],
+            [19, new BlockWrapper(null, "normal_snake", 1, true, drawSnake, [snakeNormalDownTile, snakeNormalRightTile, dizzySnakeTile])],
+            [22, new BlockWrapper(fireSpitterRightTile, "firespitter_right", 0, true, drawFire, fireRightTile)],
+            [23, new BlockWrapper(fireSpitterLeftTile, "firespitter_left", 0, true, drawFire, fireLeftTile)],
+            [28, new BlockWrapper(null, "spike", 1, true, drawSpike, [spikeTileTopHead, spikeTileBottomHead, spikeTileBottomStick, spikeTileTopStick])],
+            [30, new BlockWrapper(beansTile, "beans")],
+            [31, new BlockWrapper(null, "player_barrier", 2, true, drawText, ["NPB", "#0FF", 1, 16, 2])],
+            [33, new BlockWrapper(null, "enemy_barrier", 2, true, drawText, ["NEB", "#0FF", 1, 16, 2])],
+            [34, new BlockWrapper(trapdoorBlue, "trapdoor_blue")],
+            [35, new BlockWrapper(trapdoorRed, "trapdoor_red")],
+
+            [36, new BlockWrapper(null, "torch", 1, true,
+                (engine, elementId, x, y, specData, customData) => {
+                    const torchTile = [0, 255].includes(specData) ? customData[0] : customData[1]
+
+                    enginePutImage(engine, elementId, torchTile, x, y, 1)
+                }, [torchUnlit, torchLit])],
+
+            [37, new BlockWrapper(bombCloth, "bomb_cloth")],
+            [38, new BlockWrapper(sewer, "sewer", 0, true, drawWater, [this, waterTile, [waterSurfaceHeadTile, waterSurfaceBottomTile]])],
+            [43, new BlockWrapper(null, "red_snake", 1, true, drawSnake, [snakeRedDownTile, snakeRedRightTile, dizzySnakeTile])],
+            [44, new BlockWrapper(icicle, "icicle")],
+            [45, new BlockWrapper(monkeyTile, "monkey", 1)],
+            [46, new BlockWrapper(waspTile, "wasp", 1)],
+
+            config.stages_render_decoration ?
+                [47, new BlockWrapper(fanPot, "fan_pot", 0, true, drawFanPotAir, [this, fanPotAir])] :
+                [47, new BlockWrapper(fanPot, "fan_pot")],
+
+            [48, new BlockWrapper(null, "ice_laser_shooter", 1, true, drawIceLaserShooter, [iceLaserShooterLeft, iceLaserShooterRight, this, iceLaserPosition, iceLaserDecoLeft, iceLaserDecoRight])],
+            [49, new BlockWrapper(turtleTile, "turtle", 1, true, drawTurtleDirection)],
+            [79, new BlockWrapper(null, "spawn_point", 1, true, drawSpawnPointDoor, [doorHeadTile, doorBottomTile])]
+        ])
+
+        // Draw background
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                engine.drawImageImage(x * 24, y * 24, backgroundTile.image)
+            }
+        }
+
+        // Main loop
         const mapHasSpawnPoint = this.playerLayer.includes(79)
         for (let y = 0; y < this.height; y++) {
             const blockY = y * 24
             for (let x = 0; x < this.width; x++) {
                 const block = this.getBlock(x, y)
                 const blockX = x * 24
-                let dX1 = 0, dY1 = 0, dX2 = 0, dY2 = 0, dX3 = 0, dY3 = 0
 
-                let backgroundData, playerData, foregroundData
-                let unknown = false
+                let handlePlayerLayer = true
+                let imageData = null, dX = 0, dY = 0
 
-                switch (block.background) {
-                    case 99:
-                    case 255:
-                        backgroundData = backgroundTile
-                        break
-                    default:
-                        unknown = true
-                }
-                switch (block.player) {
-                    case 0:
-                        playerData = boulderTile
-                        break
-                    case 1:
-                        playerData = gemVioletTile
-                        break
-                    case 8:
-                        playerData = bomb
-                        break
-                    case 10:
-                        playerData = leafTile
-                        break
-                    case 11:
-                        playerData = fireballTile
-                        break
-                    case 18:
-                        playerData = trapdoorSwitch
-                        break
-                    case 22:
-                        playerData = fireSpitterRightTile
-                        break
-                    case 23:
-                        playerData = fireSpitterLeftTile
-                        break
-                    case 30:
-                        playerData = beansTile
-                        break
-                    case 34:
-                        playerData = trapdoorBlue
-                        break
-                    case 35:
-                        playerData = trapdoorRed
-                        break
-                    case 37:
-                        playerData = bombCloth
-                        break
-                    case 44:
-                        playerData = icicle
-                        break
-                    case 45:
-                        playerData = monkeyTile
-                        dX2 = Math.floor(-(playerData.width - 24) / 2)
-                        dY2 = Math.floor(-(playerData.height - 24) / 2)
-                        break
-                    case 46:
-                        playerData = waspTile
-                        dX2 = Math.floor(-(playerData.width - 24) / 2)
-                        dY2 = Math.floor(-(playerData.height - 24) / 2)
-                        break
-                    case 47:
-                        playerData = fanPot
-                        if (config.stages_render_pot_fan_air)
-                            for (let i = 1; i < 10; i++) {
-                                if (y - i < 0) break
-                                const block = this.getBlock(x, y - i)
-                                if (wallTiles.hasOwnProperty(block.player)) break
-                                if ([10, 18, 22, 23, 30, 34, 35, 37, 44, 79].includes(block.player)) break
-                                engine.addElement(
-                                    engine.createImage("background", fanPotAir),
-                                    blockX + 2, blockY - 24 * i, 0
-                                )
-                            }
-                        break
-                    case 79:
-                        // Special case: spawn point
-                        backgroundData = backgroundTile
-                        if (block.foreground !== 4) config.stages_render_special && engine.addElement(
-                            engine.createText("foreground", "SPP", "#F00", "13px monospace"),
-                            blockX + 1, blockY + 16, 2
-                        )
-                        config.stages_render_special && engine.addElement(engine.createImage("foreground", doorHeadTile), blockX - 48, blockY - 24, 2)
-                        config.stages_render_special && engine.addElement(engine.createImage("foreground", doorBottomTile), blockX - 48, blockY, 2)
-                        break
-                    case 255:
-                        break
-                    default:
-                        if (wallTiles.hasOwnProperty(block.player))
-                            playerData = wallTiles[block.player]
-                        else unknown = true
-                }
                 switch (block.foreground) {
                     case 20:
-                        foregroundData = decoration2x2[0][0]
-                        break
                     case 21:
-                        foregroundData = decoration2x2[0][1]
-                        break
                     case 22:
-                        foregroundData = decoration2x2[1][0]
+                    case 23: {
+                        const decoTile = decoration2x2[block.foreground - 20]
+
+                        enginePutImage(engine, "foreground_decoration", decoTile, blockX, blockY, 2)
                         break
-                    case 23:
-                        foregroundData = decoration2x2[1][1]
-                        break
-                    case 34:
-                        playerData = icicleBroken
-                        break
+                    }
                     case 255:
                         break
                     default:
                         if (wallTiles.hasOwnProperty(block.foreground)) {
-                            foregroundData = wallTiles[block.foreground]
-                            if (worldIndex === 0 && block.foreground === 117) {
-                                dX3 = 9
-                                dY3 = 2
-                            }
-                            else if (worldIndex === 0 && block.foreground === 118)
-                                dY3 = 1
-                            else if (worldIndex === 1 && block.foreground === 117) {
-                                dY3 = 4
-                            }
-                            else if (worldIndex === 1 && block.foreground === 120) {
-                                dX3 = 2
-                                dY3 = 4
-                            }
-                            else if (worldIndex === 1 && (block.foreground === 139 || block.foreground === 140)) {
-                                dX3 = 1
-                            }
-                            else if (worldIndex === 1 && block.foreground === 121) {
-                                dX3 = 2
-                            }
-                            else if (worldIndex === 1 && block.foreground === 122) {
-                                dY3 = 2
-                            }
+                            const wallTile = wallTiles[block.foreground]
+
+                            enginePutImage(engine, "foreground_block", wallTile, blockX, blockY, 2)
+                            break
                         }
-                        else unknown = true
+
+                        if (foregroundBlockMap.has(block.foreground)) {
+                            const handler = foregroundBlockMap.get(block.foreground)
+                            handlePlayerLayer = handler.addToEngine(engine, blockX, blockY, block.background)
+                        } else if (config.stages_render_unknown) {
+                            enginePutText(engine, "unk_fg_content", "???", "#F00", blockX + 1, blockY + 20, 3)
+                        }
+                        break
                 }
 
-                if (!config.stages_render_special) {
-                    // NOOP
-                }
-                else if (block.foreground === 4) {
-                    // Special case: checkpoint
-                    const checkpointIndex = block.background
-                    // console.log("Checkpoint", checkpointIndex, block)
-                    backgroundData = backgroundTile ///???
-                    playerData = checkpointTile
+                if (!handlePlayerLayer || block.player === 255)
+                    continue
 
-                    if (checkpointIndex === 0 && !mapHasSpawnPoint) {
-                        engine.addElement(engine.createImage("foreground", doorHeadTile), blockX - 48, blockY - 24, 2)
-                        engine.addElement(engine.createImage("foreground", doorBottomTile), blockX - 48, blockY, 2)
+                if (wallTiles.hasOwnProperty(block.player)) {
+                    const wallTile = wallTiles[block.player]
+
+                    enginePutImage(engine, "background_block", wallTile, blockX, blockY, 0)
+                } else if (blockMap.has(block.player)) {
+                    const handler = blockMap.get(block.player)
+                    handler.addToEngine(engine, blockX, blockY, block.background)
+                } else if (config.stages_render_unknown) {
+                    enginePutText(engine, "unk_bg_content", "UNK", "#F00", blockX + 1, blockY + 20, 3)
+                }
+            }
+        }
+
+        if (iceLaserPosition.length !== 0) {
+            const borderColor = 0xFFFFC51B
+            const innerColor = 0xFFFFF5D7
+
+            iceLaserPosition.forEach(pos => {
+                for (let i = 0; i < pos.width; i++) {
+                    engine.drawImagePixel(pos.x + i, pos.y, borderColor)
+                    engine.drawImagePixel(pos.x + i, pos.y + 1, innerColor)
+                    engine.drawImagePixel(pos.x + i, pos.y + 2, borderColor)
+                }
+                // console.log(`x: ${pos.x}, w: ${pos.width}`)
+            })
+        }
+
+        if (config.stages_render_special) {
+            if (worldIndex === 0) {
+                switch (stageIndex) {
+                    case 5: {
+                        const firePillarTile = await getFrame(mm0, 1, 12, 0)
+                        for (let i = 0; i < 2; i++) {
+                            enginePutImage(engine, "angkor_fire_pillar", firePillarTile, (9 + i * 4) * 24, 42 * 24, 1)
+                        }
+                        break
                     }
-                    engine.addElement(
-                        engine.createText("foreground", checkpointIndex.toString(), "#ff0000", "13px monospace"),
-                        blockX + 8, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 43 && block.background === 0) {
-                    // Special case: the great anaconda
-                    backgroundData = backgroundTile ///???
-                    playerData = null
-                    engine.addElement(
-                        engine.createImage("foreground+1", greatAnacondaHeadTile),
-                        blockX - Math.floor((greatAnacondaHeadTile.width - 24) / 2), blockY - Math.floor((greatAnacondaHeadTile.height - 24) / 2), 3
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockDownTile),
-                        blockX + 24 * 9, blockY - 24 * 3, 1
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockDownTile),
-                        blockX + 24 * 12, blockY - 24 * 3, 1
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockDownTile),
-                        blockX + 24 * 15, blockY - 24 * 3, 1
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockUpTile),
-                        blockX + 24 * 9, blockY - 24 * 9, 1
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockUpTile),
-                        blockX + 24 * 12, blockY - 24 * 9, 1
-                    )
-                    engine.addElement(
-                        engine.createImage("player", greatAnacondaBlockUpTile),
-                        blockX + 24 * 15, blockY - 24 * 9, 1
-                    )
-                }
-                else if (block.player === 19 || block.player === 43) {
-                    // Special case: snake || red snake
-                    // FIXME Show the real snake orientation, not just vertical/horizontal
-                    const vertical = block.background === 1 || block.background === 3
-                    const isRed = block.player === 43
-                    // console.log("Snake:", vertical, isRed, block)
-                    backgroundData = backgroundTile ///???
-                    if (vertical)
-                        playerData = isRed ? snakeRedDownTile : snakeNormalDownTile
-                    else
-                        playerData = isRed ? snakeRedRightTile : snakeNormalRightTile
-                    dX2 = Math.floor(-(playerData.width - 24) / 2)
-                    dY2 = Math.floor(-(playerData.height - 24) / 2)
-                    if (worldIndex !== 1 && vertical)
-                        dY2 *= 2 // * 2 because of the long snake's tail
-                    if (worldIndex === 1) engine.addElement(
-                        engine.createText("foreground", vertical ? "V" : "H", isRed ? "#FF0" : "#F00", "13px monospace"),
-                        blockX + 8, blockY + 16, 2
-                    )
-                }
-                else if (block.foreground === 6) {
-                    // Special case: pressure plate
-                    const doorIndex = block.background
-                    // console.log("Pressure plate:", doorID, block)
-                    backgroundData = backgroundTile ///???
-                    playerData = pressurePlateTile
-                    dY2 = 12
-                    engine.addElement(
-                        engine.createText("foreground", doorIndex.toString(), "#F00", "13px monospace"),
-                        blockX + (doorIndex < 10 ? 8 : 1), blockY + 11, 2
-                    )
-                }
-                else if (block.foreground === 2) {
-                    // Special case: hint
-                    const hintID = block.background
-                    backgroundData = backgroundTile ///???
-                    playerData = hintID === 0 ?
-                        mysticMalletTile :
-                        hintID === 1 ?
-                            grippingHookTile :
-                            hintID === 2 ? // ???
-                                freezeMalletTile :
-                                (console.error("Unknown hint ID:", hintID), null)
-                }
-                else if (block.foreground === 5 || block.foreground === 28) {
-                    // Special case: exit || secret exit
-                    const isSecret = block.foreground === 28
-                    const exitDirectionRight = block.background === 2
-                    backgroundData = backgroundTile ///???
-                    playerData = exitDirectionRight ?
-                        exitRightTile :
-                        exitLeftTile
-                    if (isSecret) engine.addElement(
-                        engine.createText("foreground", "SECRET", "#0FF", "10px monospace"),
-                        blockX + 24, blockY + 14, 2
-                    )
-                }
-                else if (block.player === 12) {
-                    // Special case: magic padlock
-                    const purpleGemCount = block.background
-                    backgroundData = backgroundTile ///???
-                    playerData = magicPadlockTile
-                    engine.addElement(
-                        engine.createText("foreground", purpleGemCount.toString(), "#F00", "13px monospace"),
-                        blockX + 2, blockY + 20, 2
-                    )
-                }
-                else if (block.foreground === 33 || block.foreground === 14) {
-                    // Special case: chest || red chest
-                    const contents = block.player
-                    const isRed = block.foreground === 14
-                    backgroundData = backgroundTile
-                    foregroundData = isRed ? chestRedTile : chestBrownTile
-                    dY3 = 2
-                    // console.warn("Chest:", contents)
+                    case 8: {
+                        const greatAnacondaBlockDownTile = await getFrame(b0, 1, 1, 0)
+                        for (let i = 0; i < 3; i++) {
+                            enginePutImage(engine, "angkor_boss_hole_block", greatAnacondaBlockDownTile, (10 + i * 3) * 24, 9 * 24, 0)
+                        }
+                        break
+                    }
+                    case 13: {
+                        let sealTileIdx = 4
+                        for (let y = 0; y < 5; y++) {
+                            for (let x = 0; x < 5; x++) {
+                                const sealTile = await getFrame(mmv, 0, sealTileIdx++, 0)
 
-                    if (config.stages_render_chest_contents) {
-                        if (contents === 2)
-                            engine.addElement(
-                                engine.createImage("foreground+1", gemRedTile),
-                                blockX, blockY - 6, 3
-                            )
-                        else if (contents === 4 || contents === 5)
-                            engine.addElement(
-                                engine.createImage("foreground+1", contents === 4 ? goldKeyTile : silverKeyTile),
-                                blockX + 1, blockY - 3, 3
-                            )
-                        else if (contents === 6) {
-                            engine.addElement(
-                                engine.createImage("foreground+1", oneUpTile),
-                                blockX, blockY - 6, 3
-                            )
+                                enginePutImage(engine, "seal", sealTile, (60 + x) * 24, (2 + y) * 24, 1)
+                            }
                         }
-                        else if (contents === 7 || contents === 41) {
-                            const gemVioletAmount = contents === 7 ?
-                                10 :
-                                block.background
-                            engine.addElement(
-                                engine.createImage("foreground+1", gemVioletTile),
-                                blockX, blockY - 6, 3
-                            )
-                            engine.addElement(
-                                engine.createText("foreground+1", gemVioletAmount.toString(), "#0FF", "13px monospace"),
-                                blockX + 5, blockY + 10, 3
-                            )
-                        }
-                        else if (contents === 24)
-                            engine.addElement(
-                                engine.createImage("foreground+1", mysticMalletTile),
-                                blockX, blockY - 6, 3
-                            )
-                        else if (contents === 26)
-                            engine.addElement(
-                                engine.createImage("foreground+1", freezeMalletTile),
-                                blockX, blockY - 6, 3
-                            )
-                        else if (contents === 27)
-                            engine.addElement(
-                                engine.createImage("foreground+1", grippingHookTile),
-                                blockX, blockY - 3, 3
-                            )
-                        else if (contents === 51)
-                            engine.addElement(
-                                engine.createImage("foreground+1", silverDiamondTile),
-                                blockX - 2, blockY - 8, 3
-                            )
-                        else if (contents === 52)
-                            engine.addElement(
-                                engine.createImage("foreground+1", iceCrystalTile),
-                                blockX - 2, blockY - 8, 3
-                            )
-                        else if (contents === 53)
-                            engine.addElement(
-                                engine.createImage("foreground+1", fireCrystalTile),
-                                blockX - 2, blockY - 8, 3
-                            )
-                        else if (contents === 40)
-                            engine.addElement(
-                                engine.createImage("foreground+1", mysticPotionTile),
-                                blockX, blockY - 8, 3
-                            )
-                        else if (contents === 42)
-                            engine.addElement(
-                                engine.createImage("foreground+1", compassTile),
-                                blockX, blockY - 8, 3
-                            )
-                        else {
-                            engine.addElement(
-                                engine.createText("foreground+1", "???", "#F00", "13px monospace"),
-                                blockX + 1, blockY + 20, 3
-                            )
-                            console.log("Unknown chest contents:", contents, isRed ? "red" : "normal", block, x, y)
-                        }
+                        break
                     }
                 }
-                else if (/*block.player === 31 && */(block.foreground === 8 || block.foreground === 9)) {
-                    // Special case: keyhole
-                    const doorIndex = block.background
-                    const isGold = block.foreground === 9
-                    backgroundData = backgroundTile ///???
-                    playerData = isGold ? goldKeyholeTile : silverKeyholeTile
-                    engine.addElement(
-                        engine.createText("foreground", doorIndex.toString(), "#F00", "13px monospace"),
-                        blockX + (doorIndex < 10 ? 8 : 1), blockY + 16, 2
-                    )
-                }
-                else if (block.foreground === 17) {
-                    // Special case: defeat everyone label
-                    const defeatEveryoneIndex = block.background
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "DEL", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 11, 2
-                    )
-                    engine.addElement(
-                        engine.createText("foreground", defeatEveryoneIndex.toString(), "#FFF", "13px monospace"),
-                        blockX + (defeatEveryoneIndex < 10 ? 8 : 1), blockY + 21, 2
-                    )
-                }
-                else if (block.foreground === 26) {
-                    // Special case: defeat everyone trigger
-                    const defeatEveryoneIndex = block.background
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "DET", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 11, 2
-                    )
-                    engine.addElement(
-                        engine.createText("foreground", defeatEveryoneIndex.toString(), "#FFF", "13px monospace"),
-                        blockX + (defeatEveryoneIndex < 10 ? 8 : 1), blockY + 21, 2
-                    )
-                }
-                else if (block.background === 30 && block.foreground === 0) {
-                    // Special case: text #89 and #90
-                    // const unknown = block.foreground
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX1", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                    /*engine.addElement(
-                        engine.createText("foreground", unknown.toString(), "#FFF", "13px monospace"),
-                        blockX + (unknown < 10 ? 8 : 1), blockY + 21, 2
-                    )*/
-                }
-                else if (block.foreground === 7) {
-                    // Special case: door bottom
-                    const doorIndex = block.background
-                    backgroundData = backgroundTile ///???
-                    playerData = doorBottomTile
-                    engine.addElement(
-                        engine.createText("foreground", doorIndex.toString(), "#F00", "13px monospace"),
-                        blockX + (doorIndex < 10 ? 8 : 1), blockY + 16, 2
-                    )
-                    y > 0 && ![8, 9].includes(this.getBlock(x, y - 1).foreground) && engine.addElement(engine.createImage("foreground", doorHeadTile), blockX, blockY - 24, 2)
-                }
-                else if (block.foreground === 1) {
-                    // Special case: shake up and down animation
-                    engine.addElement(
-                        engine.createText("foreground", "SHK", "#F00", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 3 && block.foreground === 0) {
-                    // Special case: fire statues fall animation
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "FSF", "#F00", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 79) {
-                    // Special case: spawn point
-                    // Moved to the switch above
-                }
-                else if (block.background === 33 && block.foreground === 0) {
-                    // Special case: text #106 and #107
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX2", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 29 && block.foreground === 0) {
-                    // Special case: text #84 and #85 and #86
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX3", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 10 && block.foreground === 0) {
-                    // Special case: text #80
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX4", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 13 && block.foreground === 0) {
-                    // Special case: text #81 and #92 and #103 and #113
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX5", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 16 && block.foreground === 0) {
-                    // Special case: text #114 and #115 and #116 and #117
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX6", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 28 && block.foreground === 0) {
-                    // Special case: text #118 and #82 and #83 and #117
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX7", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 34 && block.foreground === 0) {
-                    // Special case: text #108 and #109 and #110
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX8", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.background === 35 && block.foreground === 0) {
-                    // Special case: text #111 and #112 and #110
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "TX9", "#FFF", "13px monospace"),
-                        blockX + 2, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 28) {
-                    // Special case: spike
-                    const isFacingDown = [3, 33].includes(block.background)
-                    backgroundData = backgroundTile
-                    playerData = isFacingDown ? spikeTileTopStick : spikeTileBottomStick
-                    dX2 = 5
-                    engine.addElement(
-                        engine.createImage("player", isFacingDown ? spikeTileTopHead : spikeTileBottomHead),
-                        blockX + 2, blockY + 24 * (isFacingDown ? 1 : -1), 2
-                    )
-                    engine.addElement(
-                        engine.createText("foreground", block.background.toString(), "#0FF", "13px monospace"),
-                        blockX + (block.background < 10 ? 8 : 1), blockY + 16, 2
-                    )
-                }
-                else if (block.player === 16 && (block.background === 2 || block.background === 4)) {
-                    // Special case: knight
-                    const isFacingLeft = block.background === 4
-                    backgroundData = backgroundTile
-                    playerData = isFacingLeft ? knightLeft : knightRight
-                    dY2 = -24
-                    if (isFacingLeft)
-                        dX2 = -4
-                    else
-                        dX2 = -6
-                }
-                else if (block.player === 14 && (block.background === 2 || block.background === 4 || block.background === 255)) {
-                    // Special case: spike ball
-                    const isFacingLeft = block.background === 4
-                    backgroundData = backgroundTile
-                    playerData = spikeBall
-                    engine.addElement(
-                        engine.createText("foreground", isFacingLeft ? "L" : "R", "#FF0", "13px monospace"),
-                        blockX + 8, blockY + 16, 2
-                    )
-                }
-                else if ((block.background === 4 || block.background === 6 || block.background === 19) && block.foreground === 0) {
-                    // Special case: scene overview animation (bavaria stage 4, X20 Y16) || (bavaria stage 9, X30 Y10) || (bavaria secret stage 3, X6 Y47)
-                    backgroundData = backgroundTile
-                    engine.addElement(
-                        engine.createText("foreground", "SOA", "#F00", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 36 && (block.background === 0 || block.background === 255)) {
-                    // Special case: torch
-                    const unlit = [0, 255].includes(block.background)
-                    backgroundData = backgroundTile
-                    playerData = unlit ? torchUnlit : torchLit
-                    dY2 = unlit ? -10 : -22
-                }
-                else if (block.player === 38) {
-                    // Special case: sewer
-                    const waterBlocks = block.background
-                    backgroundData = backgroundTile
-                    playerData = sewer
-                    engine.addElement(
-                        engine.createText("foreground", waterBlocks.toString(), "#0FF", "13px monospace"),
-                        blockX + (waterBlocks < 10 ? 8 : 1), blockY + 16, 2
-                    )
-                }
-                else if (block.player === 33) {
-                    // Special case: fireball stopper
-                    playerData = null
-                    engine.addElement(
-                        engine.createText("foreground", "NFB", "#0FF", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 31) {
-                    // Special case: player stopper
-                    playerData = null
-                    engine.addElement(
-                        engine.createText("foreground", "NPB", "#0FF", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 49) {
-                    // Special case: turtle
-                    const direction = block.background
-                    // console.log("Turtle:", vertical, block)
-                    backgroundData = backgroundTile ///???
-                    if (direction === 1)
-                        playerData = turtleDownTile ///???
-                    else if (direction === 3)
-                        playerData = turtleUpTile ///???
-                    else playerData = turtleUpTile
-                    dX2 = Math.floor(-(playerData.width - 24) / 2)
-                    dY2 = Math.floor(-(playerData.height - 24) / 2)
-                    if (direction === 2 || direction === 4) engine.addElement(
-                        engine.createText("foreground", direction === 2 ? "L" : "R", "#FF0", "13px monospace"),
-                        blockX + 8, blockY + 16, 2
-                    )
-                }
-                else if (block.player === 45) {
-                    // Special case: monkey
-                    // Moved to switch block.player
-                }
-                else if (block.player === 48 && (block.background === 2 || block.background === 4 || block.background === 255)) {
-                    // Special case: ice laser shooter
-                    const isFacingLeft = block.background === 4
-                    backgroundData = backgroundTile
-                    playerData = isFacingLeft ? iceLaserShooterLeft : iceLaserShooterRight
-                    dY2 = -23
-                }
-                else if (unknown) {
-                    console.warn("Unknown block layer configuration:", x, y, block)
-                    config.stages_render_unknown && engine.addElement(
-                        engine.createText("foreground", "???", "#F00", "13px monospace"),
-                        blockX + 1, blockY + 16, 2
-                    )
-                }
+            } else if (worldIndex === 1 && stageIndex === 9) {
+                const teutonicKnightTile = await getFrame(b1, 0, 47, 0)
 
-                // if (!backgroundData && !playerData && !foregroundData)
-                //     console.warn("Unknown block layer configuration:", x, y, block)
+                enginePutImage(engine, "bavaria_boss", teutonicKnightTile, 17 * 24, 21 * 24, 1)
+            } else if (worldIndex === 2 && stageIndex === 10) {
+                const yetiTile = await getFrame(mm1, 0, 2, 0)
 
-                if (backgroundData && config.stages_render_background)
-                    engine.addElement(engine.createImage("background", backgroundData), blockX + dX1, blockY + dY1, 0)
-                if (playerData && config.stages_render_player)
-                    engine.addElement(engine.createImage("player", playerData), blockX + dX2, blockY + dY2, 1)
-                if (foregroundData && config.stages_render_foreground)
-                    engine.addElement(engine.createImage("foreground", foregroundData), blockX + dX3, blockY + dY3, 2)
+                enginePutImage(engine, "siberia_boss", yetiTile, 15 * 24, 21 * 24, 1)
             }
         }
     }
@@ -973,11 +1029,16 @@ export class Stage {
      * @param gen4 {FileChunk[]|null}
      * @param mmv {FileChunk[]|null}
      * @param b0 {FileChunk[]|null}
+     * @param ui {FileChunk[]|null}
+     * @param mm0 {FileChunk[]|null}
+     * @param b1 {FileChunk[]|null}
+     * @param mm1 {FileChunk[]|null}
      * @param worldIndex {0|1|2}
+     * @param stageIndex {number}
      * @param config {TParseConfig|null}
      * @returns {HTMLCanvasElement}
      */
-    async render(scale, blocksFileChunks, {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}, worldIndex, config = null) {
+    async render(scale, blocksFileChunks, {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0, ui, mm0, b1, mm1}, worldIndex, stageIndex, config = null) {
         const canvas = document.createElement("canvas")
         const engine = new CanvasEngine2D({
             canvas: canvas,
@@ -985,7 +1046,8 @@ export class Stage {
             imageW: this.width * 24,
             imageH: this.height * 24,
             backgroundColor: CanvasEngine2DVariables.COLORS.BLACK,
-            scale
+            scale: scale,
+            customBackground: true
         })
 
         await this.renderToEngine(engine, blocksFileChunks, {
@@ -996,8 +1058,12 @@ export class Stage {
             gen3,
             gen4,
             mmv,
-            b0
-        }, worldIndex, config)
+            b0,
+            ui,
+            mm0,
+            b1,
+            mm1
+        }, worldIndex, stageIndex, config)
 
         engine.render()
         return canvas
@@ -1058,9 +1124,13 @@ export async function parseRequiredFilesToRender(config, worldIndex) {
         gen3 = await config.parseOtherFile("gen3.f"),
         gen4 = (mapID === "siberia" ? await config.parseOtherFile("gen4.f") : null),
         mmv = await config.parseOtherFile("mmv.f"),
-        b0 = (mapID === "angkor" ? await config.parseOtherFile("b0.f") : null)
+        b0 = (mapID === "angkor" ? await config.parseOtherFile("b0.f") : null),
+        ui = await config.parseOtherFile("ui.f"),
+        mm0 = (mapID === "angkor" ? await config.parseOtherFile("mm0.f") : null),
+        b1 = (mapID === "bavaria" ? await config.parseOtherFile("b1.f") : null),
+        mm1 = (mapID === "siberia" ? await config.parseOtherFile("mm1.f") : null)
 
-    return {blocksFileChunks, otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}}
+    return {blocksFileChunks, otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0, ui, mm0, b1, mm1}}
 }
 
 /**
@@ -1078,8 +1148,22 @@ export async function render(chunk, parsed, config) {
     const worldIndex = mapID === "angkor" ? 0 : (mapID === "bavaria" ? 1 : 2)
     const {
         blocksFileChunks,
-        otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0}
+        otherFiles: {cm, gen0, gen1, gen2, gen3, gen4, mmv, b0, ui, mm0, b1, mm1}
     } = await parseRequiredFilesToRender(config, worldIndex)
+
+    function getStageName(stageIndex) {
+        const secretStageBase = [9, 10, 11]
+
+        if (worldIndex === 0 && stageIndex === 13) {
+            return "intro-stage"
+        }
+
+        if (stageIndex >= secretStageBase[worldIndex]) {
+            return `secret-stage-${stageIndex - secretStageBase[worldIndex] + 1}`
+        }
+
+        return `stage-${stageIndex + 1}`
+    }
 
     const stageDivs = []
     for (let i = 0; i < stages.length; i++) {
@@ -1090,7 +1174,7 @@ export async function render(chunk, parsed, config) {
             const numbersDiv = createElement("div", [
                 numbersCanvas,
                 createElement("br"),
-                downloadCanvasButton(numbersCanvas, `${mapID}-stage-${i}-numbers.png`)
+                downloadCanvasButton(numbersCanvas, `${mapID}-${getStageName(i)}-numbers.png`)
             ])
 
             const fullRenderCanvas = blocksFileChunks ?
@@ -1102,13 +1186,17 @@ export async function render(chunk, parsed, config) {
                     gen3,
                     gen4,
                     mmv,
-                    b0
-                }, worldIndex, config) :
+                    b0,
+                    ui,
+                    mm0,
+                    b1,
+                    mm1
+                }, worldIndex, i, config) :
                 null
             const fullRenderDiv = fullRenderCanvas && createElement("div", [
                 fullRenderCanvas,
                 createElement("br"),
-                downloadCanvasButton(fullRenderCanvas, `${mapID}-stage-${i}-full-render.png`)
+                downloadCanvasButton(fullRenderCanvas, `${mapID}-${getStageName(i)}-full-render.png`)
             ])
 
             return createElement("div", [toggleButton(numbersDiv, false, "Show numbers", "Hide numbers"),

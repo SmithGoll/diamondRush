@@ -6,46 +6,6 @@ canvas {
     image-rendering: pixelated;
 }
 
-table {
-    border-collapse: collapse;
-    border-spacing: 0;
-}
-
-th {
-    background-color: #004080; /* Darker blue */
-    color: white;
-    font-size: 18px;
-    font-weight: bold;
-    padding: 10px;
-    border-bottom: 3px solid white;
-    text-align: left;
-}
-
-td {
-    padding: 8px;
-    border-bottom: 1px solid white;
-}
-
-tr {
-    color: white;
-}
-
-tr:nth-child(even) {
-    background-color: #99c2ff; /* Light blue */
-}
-
-tr:nth-child(odd) {
-    background-color: #66a3ff; /* Dark blue */
-}
-
-tr:nth-child(even):hover {
-    background-color: #3385ff;
-}
-
-tr:nth-child(odd):hover {
-    background-color: #0073e6;
-}
-
 #chunks {
     display: flex;
     flex-direction: row;

@@ -4,7 +4,7 @@
  * @home https://jakub-augustyn.web.app/
  */
 
-import {toggleButton, createElement, renderCanvasEngine2DImage} from "../utils.js";
+import {toggleButton, createElement, createTable, renderCanvasEngine2DImage} from "../utils.js";
 
 /**
  * @typedef {number} int8_t
@@ -688,6 +688,8 @@ export async function render(chunk, parsed, config) {
     /** @type {BSprite} */
     const sprite = parsed.sprite
 
+    const flip = ['None', 'X', 'Y', 'XY']
+
     const moduleDivs = []
     for (let moduleI = 0; moduleI < sprite.modules.length; moduleI++) {
         moduleDivs.push(createElement("div", [
@@ -710,19 +712,31 @@ export async function render(chunk, parsed, config) {
         paletteImages.push(palette)
     }
 
-    const frameModuleDivs = []
+    const frameModuleTable = []
     for (let frameModuleI = 0; frameModuleI < sprite.frameModules.length; frameModuleI++) {
         const frameModule = sprite.frameModules[frameModuleI]
-        frameModuleDivs.push(createElement("div", [
-            createElement("h3", `Frame module ${frameModuleI}`),
-            new Text(`Module: ${frameModule.moduleIndex}`),
-            createElement("br"),
-            new Text(`Offset X: ${frameModule.offsetX}, Y: ${frameModule.offsetY}`),
-            createElement("br"),
-            new Text(`Flags: ${frameModule.flags} (flip vertically: ${!!(frameModule.flags & 1)}, flip horizontally: ${!!(frameModule.flags & 2)})`),
-        ], {"class": "sprite-frame-module"}))
+        frameModuleTable.push([
+            `${frameModuleI}`,
+            `${frameModule.moduleIndex}`,
+            `${frameModule.offsetX}`,
+            `${frameModule.offsetY}`,
+            flip[frameModule.flags]
+        ])
     }
-    const frameModuleDivsContainer = createElement("div", frameModuleDivs, {"class": "sprite-frame-modules"})
+    const frameModuleTableContainer = createElement("div", frameModuleTable.length === 0 ? null : [createTable(['Index', 'Module ID', 'Offset X', 'Offset Y', 'Flip'], frameModuleTable)], {})
+
+    const frameBoundBoxTable = []
+    for (let frameBoundBoxI = 0; frameBoundBoxI < sprite.frames.length; frameBoundBoxI++) {
+        const frameBoundBox = sprite.frames[frameBoundBoxI].bbox
+        frameBoundBoxTable.push([
+            `${frameBoundBoxI}`,
+            `${frameBoundBox.x}`,
+            `${frameBoundBox.y}`,
+            `${frameBoundBox.w}`,
+            `${frameBoundBox.h}`
+        ])
+    }
+    const frameBoundBoxTableContainer = createElement("div", frameBoundBoxTable.length === 0 ? null : [createTable(['Index', 'Offset X', 'Offset Y', 'Width', 'Height'], frameBoundBoxTable)], {})
 
     const frameDivs = []
     for (let frameI = 0; frameI < sprite.frames.length; frameI++) {
@@ -738,7 +752,19 @@ export async function render(chunk, parsed, config) {
     }
     const frameDivsContainer = createElement("div", frameDivs, {"class": "sprite-frames"})
 
-    const animationFrameDivsContainer = createElement("div", "You don't need to see that (e.g., I'm lazy). Look into the console if you want.", {"class": "sprite-animation-frames"})
+    const animationFrameTable = []
+    for (let animationFrameI = 0; animationFrameI < sprite.animationFrames.length; animationFrameI++) {
+        const animationFrame = sprite.animationFrames[animationFrameI]
+        animationFrameTable.push([
+            `${animationFrameI}`,
+            `${animationFrame.frameIndex}`,
+            `${animationFrame.time}`,
+            `${animationFrame.offsetX}`,
+            `${animationFrame.offsetY}`,
+            flip[animationFrame.flags]
+        ])
+    }
+    const animationFrameTableContainer = createElement("div", animationFrameTable.length === 0 ? null : [createTable(['Index', 'Frame ID', 'Frame Time', 'Offset X', 'Offset Y', 'Flip'], animationFrameTable)], {})
 
     const animationDivs = []
     for (let animationI = 0; animationI < sprite.animations.length; animationI++) {
@@ -759,14 +785,17 @@ export async function render(chunk, parsed, config) {
         toggleButton(moduleDivsContainer, frameDivs.length === 0),
         moduleDivsContainer,
         createElement("h2", `Frame modules`),
-        toggleButton(frameModuleDivsContainer, false),
-        frameModuleDivsContainer,
+        toggleButton(frameModuleTableContainer, false),
+        frameModuleTableContainer,
+        createElement("h2", `Frame bound box`),
+        toggleButton(frameBoundBoxTableContainer, false),
+        frameBoundBoxTableContainer,
         createElement("h2", `Frames`),
         toggleButton(frameDivsContainer, animationDivs.length === 0),
         frameDivsContainer,
         createElement("h2", `Animation frames`),
-        toggleButton(animationFrameDivsContainer, false),
-        animationFrameDivsContainer,
+        toggleButton(animationFrameTableContainer, false),
+        animationFrameTableContainer,
         createElement("h2", `Animations`),
         toggleButton(animationDivsContainer, true),
         animationDivsContainer,
