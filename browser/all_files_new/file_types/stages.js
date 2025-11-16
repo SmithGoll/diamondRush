@@ -4,6 +4,7 @@
  * @home https://jakub-augustyn.web.app/
  */
 
+import {BSprite} from "./sprites.js"
 import {copyToClipboardButton, createElement, delayedRender, downloadCanvasButton, toggleButton} from "../utils.js";
 
 const fileNameToMapID = new Map([
@@ -16,6 +17,74 @@ const mapIDToBlocksFileName = new Map([
     ["bavaria", "1.f"],
     ["siberia", "2.f"],
 ])
+
+// custom alpha font (courier)
+const fontSpr = []
+const digitSpr = []
+const digitWidth = 7
+//const charHeight = 11
+const charHeight = 9
+const charMap = new Map([
+    ['?', 0],
+    ['A', 1],
+    ['B', 2],
+    ['C', 3],
+    ['D', 4],
+    ['E', 5],
+    ['F', 6],
+    ['G', 7],
+    ['H', 8],
+    ['I', 9],
+    ['J', 10],
+    ['K', 11],
+    ['L', 12],
+    ['M', 13],
+    ['N', 14],
+    ['O', 15],
+    ['P', 16],
+    ['Q', 17],
+    ['R', 18],
+    ['S', 19],
+    ['T', 20],
+    ['U', 21],
+    ['V', 22],
+    ['W', 23],
+    ['X', 24],
+    ['Y', 25],
+    ['Z', 26]
+])
+
+const Anchor = {
+  // Horizontal
+  LEFT: 0,
+  RIGHT: 1 << 1,
+  HCENTER: 1 << 2,
+  
+  // Vertical
+  TOP: 1 << 3,
+  BOTTOM: 1 << 4,
+  VCENTER: 1 << 5
+}
+
+async function loadFontSprite() {
+    if (fontSpr.length !== 0) return true
+
+    const response = await fetch(`./small_fonts.bsprite`, {
+        mode: "same-origin",
+        cache: "force-cache",
+        redirect: "error"
+    })
+    if (response.status !== 200) return false
+
+    const dataView = new DataView(await response.arrayBuffer())
+    const spr = new BSprite()
+    spr.parseSprite(dataView, 0)
+    for (let i = 0; i < spr.modules.length; i++) {
+        fontSpr.push(spr.modules[i].getParsedData(0))
+    }
+
+    return true
+}
 
 class BlockWrapper {
     /**
@@ -218,6 +287,10 @@ export class Stage {
             stages_render_invisible: true
         }
 
+        if (!(await loadFontSprite())) {
+            throw new Error("Failed to load font sprite")
+        }
+
         engine.args.renderText = config.stages_render_invisible
 
         /**
@@ -265,6 +338,73 @@ export class Stage {
 
         function enginePutImage(engine, id, image, ox, oy, layer) {
             engine.addElement(engine.createImage(id, image.image), ox + image.dx, oy + image.dy, layer)
+        }
+
+        // TODO: handle multi line
+        function drawString(engine, id, text, x, y, anchor, hborder = 0, vborder = 0, layer = 2) {
+            if (!config.stages_render_invisible) return
+
+            const boundW = 24 - Math.floor(hborder * 2)
+            const boundH = 24 - Math.floor(vborder * 2)
+
+            const isDigitByCodePoint = codePoint => codePoint >= 48 && codePoint <= 57;
+
+            let actualX = Math.floor(x + hborder)
+            let actualY = Math.floor(y + vborder)
+
+            // compute string width
+            let textW = 0
+            for (let i = 0; i < text.length; i++) {
+                const codePoint = text.codePointAt(i)
+                const codeChar = String.fromCodePoint(codePoint)
+
+                if (isDigitByCodePoint(codePoint)) {
+                    textW += digitWidth
+                } else if (charMap.has(codeChar)) {
+                    const charModule = fontSpr[charMap.get(codeChar)]
+                    textW += charModule.width
+                }
+
+                if (codePoint > 0xFFFF) i++
+            }
+
+            if (textW === 0) return
+
+            // handle anchor
+            if ((anchor & Anchor.RIGHT) !== 0) {
+                actualX -= textW - boundW
+            } else if ((anchor & Anchor.HCENTER) !== 0) {
+                actualX += Math.floor((boundW - textW) / 2)
+            }
+
+            if ((anchor & Anchor.BOTTOM) !== 0) {
+                actualY += boundH - charHeight
+            } else if ((anchor & Anchor.VCENTER) !== 0) {
+                // just support single line now
+                actualY += Math.floor((boundH - charHeight) / 2)
+            }
+
+            // put char spr module to engine
+            for (let i = 0; i < text.length; i++) {
+                const codePoint = text.codePointAt(i)
+                const codeChar = String.fromCodePoint(codePoint)
+
+                if (isDigitByCodePoint(codePoint)) {
+                    const digitModule = digitSpr[codePoint - 48].image
+
+                    engine.addElement(engine.createImage(id, digitModule), actualX, actualY + Math.floor((charHeight - digitModule.height) / 2), layer)
+
+                    actualX += digitWidth
+                } else if (charMap.has(codeChar)) {
+                    const charModule = fontSpr[charMap.get(codeChar)]
+
+                    engine.addElement(engine.createImage(id, charModule), actualX, actualY, layer)
+
+                    actualX += charModule.width
+                }
+
+                if (codePoint > 0xFFFF) i++
+            }
         }
 
         function imageDataFlipX(image) {
@@ -402,17 +542,20 @@ export class Stage {
         }
 
         function drawTurtleDirection(engine, elementId, x, y, specData, customData) {
-            if (specData === 2 || specData === 4)
-                enginePutText(engine, "turtle_direction", specData === 2 ? "L" : "R", "#FF0", x + 8, y + 16, 2)
+            // if (specData === 2 || specData === 4)
+                drawString(engine, "turtle_direction", specData === 2 ? "H" : "V", x, y, Anchor.HCENTER | Anchor.VCENTER)
+                // enginePutText(engine, "turtle_direction", specData === 2 ? "L" : "R", "#FF0", x + 8, y + 16, 2)
         }
 
-        function drawText(engine, elementId, x, y, specData, customData) {
-            enginePutText(engine, elementId, customData[0], customData[1], x + customData[2], y + customData[3], customData[4])
+        function drawCenteredText(engine, elementId, x, y, specData, customData) {
+            drawString(engine, elementId, customData, x, y, Anchor.HCENTER | Anchor.VCENTER)
+            // enginePutText(engine, elementId, customData[0], customData[1], x + customData[2], y + customData[3], customData[4])
         }
 
         function drawWater(engine, elementId, x, y, specData, customData) {
             // Draw water count
-            enginePutText(engine, "sewer_water_count", specData.toString(), "#0FF", x + (specData < 10 ? 8 : 4), y + 16, 2)
+            drawString(engine, "sewer_water_count", specData.toString(), x, y, Anchor.HCENTER | Anchor.VCENTER)
+            // enginePutText(engine, "sewer_water_count", specData.toString(), "#0FF", x + (specData < 10 ? 8 : 4), y + 16, 2)
 
             if (!config.stages_render_decoration) return
 
@@ -505,17 +648,21 @@ export class Stage {
 
                 enginePutImage(engine, "spike_direction", directionTile, x, y, 1)
             } else {
-                enginePutText(engine, "spike_direction", isFacingLeft ? "L" : "R", "#FF0", x + 8, y + 16, 2)
+                drawString(engine, "spike_direction", isFacingLeft ? "L" : "R", x, y, Anchor.HCENTER | Anchor.VCENTER)
+                // enginePutText(engine, "spike_direction", isFacingLeft ? "L" : "R", "#FF0", x + 8, y + 16, 2)
             }
         }
 
         function drawPlateId(engine, elementId, x, y, specData, customData) {
-            enginePutText(engine, "pressure_plate_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 11, 2)
+            drawString(engine, "pressure_plate_id", specData.toString(), x, y, Anchor.HCENTER | Anchor.BOTTOM)
+            // enginePutText(engine, "pressure_plate_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 11, 2)
         }
 
         function drawLabelText(engine, elementId, x, y, specData, customData) {
-            enginePutText(engine, elementId, customData, "#FFF", x, y + 11, 2)
-            enginePutText(engine, elementId, specData.toString(), "#FFF", x + (specData < 10 ? 8 : 1), y + 21, 2)
+            drawString(engine, elementId, customData, x, y - 4, Anchor.HCENTER | Anchor.VCENTER)
+            // enginePutText(engine, elementId, customData, "#FFF", x, y + 11, 2)
+            drawString(engine, elementId, specData.toString(), x, y, Anchor.HCENTER | Anchor.BOTTOM, 0, 1)
+            // enginePutText(engine, elementId, specData.toString(), "#FFF", x + (specData < 10 ? 8 : 1), y + 21, 2)
         }
 
         function drawHintTile(engine, elementId, x, y, specData, customData) {
@@ -530,13 +677,15 @@ export class Stage {
             const exitTile = customData[specData === 2 ? 0 : 1]
 
             if (elementId.includes("secret"))
-                enginePutText(engine, elementId, "SECRET", "#0FF", x + 24, y + 14, 2)
+                drawString(engine, elementId, "SECRET", x + (specData === 2 ? 24 : -24), y, (specData === 2 ? Anchor.LEFT : Anchor.RIGHT) | Anchor.VCENTER)
+                // enginePutText(engine, elementId, "SECRET", "#0FF", x + 24, y + 14, 2)
 
             enginePutImage(engine, elementId, exitTile, x, y, 0)
         }
 
         function drawId(engine, elementId, x, y, specData, customData) {
-            enginePutText(engine, `${elementId}_id`, specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
+            drawString(engine, `${elementId}_id`, specData.toString(), x, y, Anchor.HCENTER | Anchor.VCENTER)
+            // enginePutText(engine, `${elementId}_id`, specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
         }
 
         function drawDoorHead(engine, elementId, x, y, specData, customData) {
@@ -548,7 +697,9 @@ export class Stage {
                 enginePutImage(engine, elementId, doorHeadTile, x, y, 0.5)
             }
 
-            enginePutText(engine, "door_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
+            drawId(engine, elementId, x, y, specData, customData)
+            // drawString(engine, `door_id`, specData.toString(), x, y, Anchor.HCENTER | Anchor.VCENTER)
+            // enginePutText(engine, "door_id", specData.toString(), "#F00", x + (specData < 10 ? 8 : 1), y + 16, 2)
         }
 
         function drawChest(engine, elementId, x, y, specData, customData) {
@@ -583,7 +734,8 @@ export class Stage {
                 }
 
                 if (contentTile === null) {
-                    enginePutText(engine, `${elementId}_unknown_content`, "???", "#F00", x + 1, y + 20, 3)
+                    drawString(engine, `${elementId}_unknown_content`, "???", x, y, Anchor.HCENTER | Anchor.VCENTER)
+                    // enginePutText(engine, `${elementId}_unknown_content`, "???", "#F00", x + 1, y + 20, 3)
                     return
                 }
 
@@ -595,7 +747,7 @@ export class Stage {
                 engine.addElement(engine.createImage(`${elementId}_content`, contentTile.image), x + dx, y + dy, 1)
 
                 // Draw digit
-                for (let i = 1; contentCount > 0; i++) {
+                /*for (let i = 1; contentCount > 0; i++) {
                     const ox = 24 - (7 * i) + dx
                     const oy = 24 - 9 + dy
 
@@ -604,6 +756,14 @@ export class Stage {
                     enginePutImage(engine, `${elementId}_content_count`, digitFont[idx], x + ox, y + oy, 2)
 
                     contentCount = Math.floor(contentCount / 10)
+                }*/
+                if (contentCount > 0) {
+                    const tmp = config.stages_render_invisible
+                    config.stages_render_invisible = true
+
+                    drawString(engine, `${elementId}_content_count`, contentCount.toString(), x, y + dy, Anchor.RIGHT | Anchor.BOTTOM/*, 0, -1*/)
+
+                    config.stages_render_invisible = tmp
                 }
             }
         }
@@ -802,10 +962,14 @@ export class Stage {
         const iceLaserPosition = []
 
         // Load digit module image
-        const digitFont = []
-        for (let i = 0; i < 10; i++) {
-            digitFont.push(await getModule(ui, 2, i, 0))
+        // const digitFont = []
+        if (digitSpr.length === 0) {
+            for (let i = 0; i < 10; i++) {
+                // digitFont.push(await getModule(ui, 2, i, 0))
+                digitSpr.push(await getModule(ui, 2, i, 0))
+            }
         }
+        const digitFont = digitSpr
 
         const chestContentData = [
             gemRedTile,
@@ -829,12 +993,14 @@ export class Stage {
 
         const foregroundBlockMap = new Map([
             [0,  new BlockWrapper(null, "demo", 0, true, drawLabelText, "DEM")],
-            [1,  new BlockWrapper(null, "screen_shake", 0, false, drawText, ["SHK", "#F00", 1, 16, 2])],
+            [1,  new BlockWrapper(null, "screen_shake", 0, false, drawCenteredText, "SHK")],
             [2,  new BlockWrapper(null, "hint", 0, false, drawHintTile, [mysticMalletTile, grippingHookTile])],
+            //[3,  new BlockWrapper(null, "???")],
 
             [4,  new BlockWrapper(checkpointTile, "checkpoint", 0, true,
                 (engine, elementId, x, y, specData, customData) => {
-                    enginePutText(engine, "checkpoint_id", specData.toString(), "#FF0000", x + 8, y + 16, 2)
+                    drawString(engine, `${elementId}_id`, specData.toString(), x, y, Anchor.RIGHT | Anchor.BOTTOM)
+                    // enginePutText(engine, "checkpoint_id", specData.toString(), "#FF0000", x + 8, y + 16, 2)
                 })],
 
             [5,  new BlockWrapper(null, "exit", 0, false, drawExit, [exitRightTile, exitLeftTile])],
@@ -843,11 +1009,16 @@ export class Stage {
             [8,  new BlockWrapper(silverKeyholeTile, "silver_keyhole", 0, false, drawId)],
             [9,  new BlockWrapper(goldKeyholeTile, "gold_keyhole", 0, false, drawId)],
             [14, new BlockWrapper(null, "red_chest", 0.5, false, drawChest, chestContentData)],
+            //[15, new BlockWrapper(trapdoorBlue, "trapdoor_blue")],
+            //[16, new BlockWrapper(trapdoorRed, "trapdoor_red")],
             [17, new BlockWrapper(null, "defeat_everyone_label", 0, true, drawLabelText, "DEL")],
             [26, new BlockWrapper(null, "defeat_everyone_trigger", 0, true, drawLabelText, "DET")],
+            //[27, new BlockWrapper(sewer, "sewer")],
             [28, new BlockWrapper(null, "secret_exit", 0, false, drawExit, [exitRightTile, exitLeftTile])],
+            //[32, new BlockWrapper(null, "leaf_being_destroyed")],
             [33, new BlockWrapper(null, "chest", 0.5, false, drawChest, chestContentData)],
             [34, new BlockWrapper(icicleBroken, "icicle_broken", 0, false)]
+            //[36, new BlockWrapper(null, "beans_being_destroyed")]
         ])
 
         const blockMap = new Map([
@@ -872,8 +1043,8 @@ export class Stage {
             [23, new BlockWrapper(fireSpitterLeftTile, "firespitter_left", 0, true, drawFire, fireLeftTile)],
             [28, new BlockWrapper(null, "spike", 1, true, drawSpike, [spikeTileTopHead, spikeTileBottomHead, spikeTileBottomStick, spikeTileTopStick])],
             [30, new BlockWrapper(beansTile, "beans")],
-            [31, new BlockWrapper(null, "player_barrier", 2, true, drawText, ["NPB", "#0FF", 1, 16, 2])],
-            [33, new BlockWrapper(null, "enemy_barrier", 2, true, drawText, ["NEB", "#0FF", 1, 16, 2])],
+            [31, new BlockWrapper(null, "player_barrier", 2, true, drawCenteredText, "NPB")],
+            [33, new BlockWrapper(null, "enemy_barrier", 2, true, drawCenteredText, "NEB")],
             [34, new BlockWrapper(trapdoorBlue, "trapdoor_blue")],
             [35, new BlockWrapper(trapdoorRed, "trapdoor_red")],
 
@@ -908,6 +1079,7 @@ export class Stage {
         }
 
         // Main loop
+        const mapHasSpawnPoint = this.playerLayer.includes(79)
         for (let y = 0; y < this.height; y++) {
             const blockY = y * 24
             for (let x = 0; x < this.width; x++) {
@@ -915,6 +1087,7 @@ export class Stage {
                 const blockX = x * 24
 
                 let handlePlayerLayer = true
+                let imageData = null, dX = 0, dY = 0
 
                 switch (block.foreground) {
                     case 20:
@@ -940,7 +1113,8 @@ export class Stage {
                             const handler = foregroundBlockMap.get(block.foreground)
                             handlePlayerLayer = handler.addToEngine(engine, blockX, blockY, block.background)
                         } else if (config.stages_render_unknown) {
-                            enginePutText(engine, "unk_fg_content", "???", "#F00", blockX + 1, blockY + 20, 3)
+                            drawString(engine, "unk_fg_content", "???", blockX, blockY, Anchor.HCENTER | Anchor.VCENTER)
+                            // enginePutText(engine, "unk_fg_content", "???", "#F00", blockX + 1, blockY + 20, 3)
                         }
                         break
                 }
@@ -956,7 +1130,8 @@ export class Stage {
                     const handler = blockMap.get(block.player)
                     handler.addToEngine(engine, blockX, blockY, block.background)
                 } else if (config.stages_render_unknown) {
-                    enginePutText(engine, "unk_bg_content", "UNK", "#F00", blockX + 1, blockY + 20, 3)
+                    drawString(engine, "unk_bg_content", "UNK", blockX, blockY, Anchor.HCENTER | Anchor.VCENTER)
+                    // enginePutText(engine, "unk_bg_content", "UNK", "#F00", blockX + 1, blockY + 20, 3)
                 }
             }
         }
