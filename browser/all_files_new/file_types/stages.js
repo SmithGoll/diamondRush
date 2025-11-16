@@ -1079,7 +1079,6 @@ export class Stage {
         }
 
         // Main loop
-        const mapHasSpawnPoint = this.playerLayer.includes(79)
         for (let y = 0; y < this.height; y++) {
             const blockY = y * 24
             for (let x = 0; x < this.width; x++) {
@@ -1087,7 +1086,6 @@ export class Stage {
                 const blockX = x * 24
 
                 let handlePlayerLayer = true
-                let imageData = null, dX = 0, dY = 0
 
                 switch (block.foreground) {
                     case 20:
